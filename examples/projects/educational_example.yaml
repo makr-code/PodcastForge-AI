@@ -1,0 +1,149 @@
+---
+title: Physik für Anfänger - Episode 1
+style: educational
+language: de
+
+speakers:
+  - name: Lehrer
+    voice: professional_male
+    description: Physik-Lehrer
+    
+  - name: Schüler
+    voice: young_female
+    description: Neugierige Schülerin
+
+script:
+  - speaker: Lehrer
+    text: Willkommen zu Physik für Anfänger! Ich bin Professor Schmidt, und heute beantworten wir eine faszinierende Frage.
+    emotion: professional
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Hallo Herr Professor! Ich habe eine Frage, die mich schon lange beschäftigt.
+    emotion: curious
+    pause_after: 0.5
+    
+  - speaker: Lehrer
+    text: Nur zu! Worum geht es?
+    emotion: encouraging
+    pause_after: 0.4
+    
+  - speaker: Schüler
+    text: Warum ist der Himmel eigentlich blau? Liegt das an den Wolken?
+    emotion: curious
+    pause_after: 0.6
+    
+  - speaker: Lehrer
+    text: Eine hervorragende Frage! Und nein, es liegt nicht an den Wolken. Das Geheimnis liegt in etwas, das wir Lichtstreuung nennen.
+    emotion: enthusiastic
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Lichtstreuung? Was ist das denn?
+    emotion: confused
+    pause_after: 0.5
+    
+  - speaker: Lehrer
+    text: Lass mich das erklären. Das Sonnenlicht, das zu uns kommt, ist eigentlich weiß. Aber weißes Licht besteht aus allen Farben des Regenbogens.
+    emotion: explanatory
+    pause_after: 0.7
+    
+  - speaker: Lehrer
+    text: Rot, Orange, Gelb, Grün, Blau, Indigo und Violett - genau wie beim Prisma in deinem Physik-Unterricht.
+    emotion: explanatory
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Ach ja, das haben wir letztes Semester gemacht!
+    emotion: excited
+    pause_after: 0.4
+    
+  - speaker: Lehrer
+    text: Genau! Wenn das Sonnenlicht durch die Erdatmosphäre reist, trifft es auf winzige Luftmoleküle.
+    emotion: professional
+    pause_after: 0.6
+    
+  - speaker: Lehrer
+    text: Diese Moleküle streuen das blaue Licht viel stärker als das rote Licht, weil blaues Licht eine kürzere Wellenlänge hat.
+    emotion: explanatory
+    pause_after: 0.9
+    
+  - speaker: Schüler
+    text: Moment, Wellenlänge? Das muss ich mir aufschreiben!
+    emotion: thoughtful
+    pause_after: 0.5
+    
+  - speaker: Lehrer
+    text: Stell dir Lichtwellen wie Meereswellen vor. Blaue Wellen sind kürzer und "hüpfender", rote Wellen sind länger und "ruhiger".
+    emotion: explanatory
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Okay, ich glaube ich verstehe. Die kurzen blauen Wellen werden mehr gestreut?
+    emotion: understanding
+    pause_after: 0.6
+    
+  - speaker: Lehrer
+    text: Exakt! Das nennen wir Rayleigh-Streuung, nach dem britischen Physiker Lord Rayleigh.
+    emotion: encouraging
+    pause_after: 0.7
+    
+  - speaker: Lehrer
+    text: Das gestreute blaue Licht kommt aus allen Richtungen zu uns, deshalb sieht der ganze Himmel blau aus.
+    emotion: explanatory
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Aber Herr Professor, warum ist der Himmel beim Sonnenuntergang dann rot oder orange?
+    emotion: curious
+    pause_after: 0.7
+    
+  - speaker: Lehrer
+    text: Ausgezeichnete Beobachtung! Beim Sonnenuntergang muss das Licht einen viel längeren Weg durch die Atmosphäre zurücklegen.
+    emotion: enthusiastic
+    pause_after: 0.8
+    
+  - speaker: Lehrer
+    text: Dabei wird fast alles blaue Licht weggestreut, und nur das rote und orange Licht erreicht unser Auge.
+    emotion: explanatory
+    pause_after: 0.9
+    
+  - speaker: Schüler
+    text: Das ist ja faszinierend! Also deshalb sind Sonnenuntergänge so schön bunt!
+    emotion: excited
+    pause_after: 0.6
+    
+  - speaker: Lehrer
+    text: Genau! Physik erklärt die Schönheit der Natur. Und hier ist noch ein Fun Fact.
+    emotion: friendly
+    pause_after: 0.5
+    
+  - speaker: Schüler
+    text: Ich bin gespannt!
+    emotion: curious
+    pause_after: 0.4
+    
+  - speaker: Lehrer
+    text: Auf dem Mond, wo es keine Atmosphäre gibt, ist der Himmel immer schwarz. Selbst tagsüber!
+    emotion: dramatic
+    pause_after: 0.8
+    
+  - speaker: Schüler
+    text: Wow, das muss unheimlich aussehen!
+    emotion: amazed
+    pause_after: 0.5
+    
+  - speaker: Lehrer
+    text: So, das war unsere erste Episode. Nächstes Mal sprechen wir über Gravitation!
+    emotion: professional
+    pause_after: 0.7
+    
+  - speaker: Schüler
+    text: Ich freue mich schon! Danke für die tolle Erklärung, Herr Professor!
+    emotion: grateful
+    pause_after: 0.6
+    
+  - speaker: Lehrer
+    text: Gerne! Bis zum nächsten Mal bei Physik für Anfänger!
+    emotion: friendly
+    pause_after: 1.0

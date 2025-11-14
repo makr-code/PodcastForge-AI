@@ -1,0 +1,15 @@
+Host [excited]: Willkommen zu unserem Podcast! [0.8s]
+Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
+
+Host [thoughtful]: Heute sprechen wir über künstliche Intelligenz... [0.6s]
+Gast [enthusiastic]: Ein faszinierendes Thema! [0.4s]
+
+# Kommentar: Dies ist ein einfaches Beispiel im Structured-Format
+# Format: SpreicherName [Emotion]: Text [Pause in Sekunden]
+
+Host [curious]: Was finden Sie an KI besonders spannend? [0.7s]
+Gast [serious]: Die Möglichkeiten sind nahezu unbegrenzt. [0.6s]
+Gast [explanatory]: Von Spracherkennung bis zu autonomen Fahrzeugen. [0.8s]
+
+Host [professional]: Vielen Dank für das interessante Gespräch! [0.6s]
+Gast [friendly]: Gerne, es hat Spaß gemacht! [0.5s]

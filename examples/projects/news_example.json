@@ -1,0 +1,127 @@
+{
+  "title": "Tech News Daily",
+  "style": "news",
+  "language": "de",
+  "speakers": [
+    {
+      "name": "Sprecher1",
+      "voice": "news_anchor_male",
+      "description": "Hauptnachrichtensprecher"
+    },
+    {
+      "name": "Sprecher2",
+      "voice": "news_anchor_female",
+      "description": "Co-Moderatorin"
+    }
+  ],
+  "script": [
+    {
+      "speaker": "Sprecher1",
+      "text": "Guten Tag und herzlich willkommen zu Tech News Daily, Ihrem Nachrichtenpodcast für Technologie und Innovation.",
+      "emotion": "professional",
+      "pause_after": 0.8
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "Heute ist der 14. November 2024. Hier sind die Top-Stories des Tages.",
+      "emotion": "neutral",
+      "pause_after": 1.0
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "OpenAI kündigt GPT-5 an - Revolution in der künstlichen Intelligenz?",
+      "emotion": "serious",
+      "pause_after": 0.7
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Das neue Sprachmodell soll eine zehnfache Leistungssteigerung gegenüber GPT-4 bieten.",
+      "emotion": "professional",
+      "pause_after": 0.6
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Experten sprechen von einem Meilenstein in der KI-Entwicklung. Tests zeigen deutlich verbesserte Reasoning-Fähigkeiten.",
+      "emotion": "neutral",
+      "pause_after": 0.9
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "Apple präsentiert das neue MacBook Pro mit M4 Chip.",
+      "emotion": "neutral",
+      "pause_after": 0.6
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Der neue Prozessor bietet bis zu 40 Prozent mehr Leistung bei gleichzeitig längerer Batterielaufzeit.",
+      "emotion": "professional",
+      "pause_after": 0.7
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Besonders beeindruckend: Die Integration von KI-Beschleunigern direkt im Chip.",
+      "emotion": "neutral",
+      "pause_after": 0.8
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "Cybersecurity-Warnung: Neue Sicherheitslücke in weit verbreiteter Software entdeckt.",
+      "emotion": "serious",
+      "pause_after": 0.7
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Sicherheitsforscher warnen vor einer kritischen Schwachstelle, die Millionen von Nutzern betrifft.",
+      "emotion": "concerned",
+      "pause_after": 0.6
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Ein Patch wurde bereits veröffentlicht. Experten raten zu sofortiger Installation.",
+      "emotion": "professional",
+      "pause_after": 0.9
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "SpaceX gelingt erfolgreicher Testflug von Starship.",
+      "emotion": "neutral",
+      "pause_after": 0.6
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Die größte je gebaute Rakete absolvierte ihren fünften Testflug - diesmal komplett erfolgreich.",
+      "emotion": "enthusiastic",
+      "pause_after": 0.7
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Ein wichtiger Schritt für zukünftige Mars-Missionen.",
+      "emotion": "professional",
+      "pause_after": 0.8
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "Und nun zum Wetter in der digitalen Welt.",
+      "emotion": "neutral",
+      "pause_after": 0.5
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Die Aktienmärkte im Tech-Sektor zeigen sich heute freundlich. Der NASDAQ steigt um 1,2 Prozent.",
+      "emotion": "professional",
+      "pause_after": 0.8
+    },
+    {
+      "speaker": "Sprecher1",
+      "text": "Das war Tech News Daily. Wir hören uns morgen wieder - selbe Zeit, selber Ort.",
+      "emotion": "professional",
+      "pause_after": 0.7
+    },
+    {
+      "speaker": "Sprecher2",
+      "text": "Bleiben Sie auf dem Laufenden!",
+      "emotion": "friendly",
+      "pause_after": 0.5
+    }
+  ]
+}

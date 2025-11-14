@@ -15,6 +15,7 @@ from .config import PodcastConfig, PodcastStyle, Speaker, ScriptLine
 from ..llm.ollama_client import OllamaClient
 from ..tts.ebook2audiobook_adapter import Ebook2AudiobookAdapter
 from ..audio.postprocessor import AudioPostProcessor
+from ..voices.library import get_voice_library, VoiceGender, VoiceAge, VoiceStyle
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class PodcastForge:
         self.llm_client = OllamaClient(model=llm_model, host=ollama_host)
         self.tts_adapter = Ebook2AudiobookAdapter(ebook2audiobook_path)
         self.audio_processor = AudioPostProcessor()
+        self.voice_library = get_voice_library()
         
         console.print("[green]✅ PodcastForge AI bereit![/green]")
     
@@ -127,10 +129,80 @@ Dauer: {duration} Minuten
         return final_path
     
     def _create_default_speakers(self, style: Union[str, PodcastStyle]) -> List[Speaker]:
-        """Erstellt Standard-Sprecher basierend auf Podcast-Stil"""
+        """Erstellt Standard-Sprecher basierend auf Podcast-Stil mit Voice Library"""
         if isinstance(style, str):
             style = PodcastStyle(style)
         
+        # Nutze Voice Library für intelligente Vorschläge
+        num_speakers = 2 if style == PodcastStyle.INTERVIEW else 3
+        suggested_voices = self.voice_library.suggest_for_podcast_style(
+            style=style,
+            language=self.language,
+            num_speakers=num_speakers
+        )
+        
+        # Erstelle Speaker aus Voice Library Vorschlägen
+        speakers = []
+        role_names = self._get_role_names_for_style(style)
+        
+        for i, voice_profile in enumerate(suggested_voices):
+            if i < len(role_names):
+                speaker = Speaker(
+                    id=f"speaker_{i+1}",
+                    name=role_names[i]["name"],
+                    role=role_names[i]["role"],
+                    personality=voice_profile.description or "professionell, klar",
+                    voice_profile=voice_profile.id,
+                    gender=voice_profile.gender.value,
+                    age=voice_profile.age.value,
+                    voice_sample=voice_profile.sample_path if voice_profile.sample_path else None
+                )
+                speakers.append(speaker)
+        
+        # Fallback wenn Voice Library keine Vorschläge hat
+        if not speakers:
+            speakers = self._create_fallback_speakers(style)
+        
+        return speakers
+    
+    def _get_role_names_for_style(self, style: PodcastStyle) -> List[Dict[str, str]]:
+        """Rolle
+    def _get_role_names_for_style(self, style: PodcastStyle) -> List[Dict[str, str]]:
+        """Rollenbezeichnungen für verschiedene Podcast-Stile"""
+        role_mappings = {
+            PodcastStyle.INTERVIEW: [
+                {"name": "Max Weber", "role": "Moderator"},
+                {"name": "Dr. Anna Schmidt", "role": "Expertin"}
+            ],
+            PodcastStyle.DISCUSSION: [
+                {"name": "Tom Fischer", "role": "Moderator"},
+                {"name": "Lisa Müller", "role": "Diskutantin"},
+                {"name": "Michael Schmidt", "role": "Diskutant"}
+            ],
+            PodcastStyle.NEWS: [
+                {"name": "Sarah Klein", "role": "Nachrichtensprecherin"},
+                {"name": "Prof. Dr. Martin Berg", "role": "Experte"}
+            ],
+            PodcastStyle.EDUCATIONAL: [
+                {"name": "Laura Wolf", "role": "Dozentin"},
+                {"name": "Tim Schulz", "role": "Assistent"}
+            ],
+            PodcastStyle.DOCUMENTARY: [
+                {"name": "Werner Kraus", "role": "Erzähler"}
+            ],
+            PodcastStyle.NARRATIVE: [
+                {"name": "Julia Stern", "role": "Erzählerin"},
+                {"name": "Robert Klein", "role": "Erzähler"}
+            ]
+        }
+        
+        return role_mappings.get(style, [
+            {"name": "Sprecher 1", "role": "Sprecher"},
+            {"name": "Sprecher 2", "role": "Sprecher"}
+        ])
+    
+    def _create_fallback_speakers(self, style: PodcastStyle) -> List[Speaker]:
+        """Fallback-Sprecher wenn Voice Library keine Vorschläge hat"""
         if style == PodcastStyle.INTERVIEW:
             return [
                 Speaker(

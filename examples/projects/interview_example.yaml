@@ -1,0 +1,119 @@
+---
+title: Interview mit Dr. Anna Müller
+style: interview
+language: de
+
+speakers:
+  - name: Host
+    voice: professional_male
+    description: Tech-Podcast Moderator
+    
+  - name: Gast
+    voice: professional_female
+    description: Dr. Anna Müller - KI-Forscherin
+
+script:
+  - speaker: Host
+    text: Willkommen zu Tech Talk, dem Podcast für Technologie-Enthusiasten! Ich bin Max, und heute habe ich eine ganz besondere Gästin bei mir.
+    emotion: excited
+    pause_after: 0.8
+    
+  - speaker: Host
+    text: Dr. Anna Müller ist eine renommierte KI-Forscherin und arbeitet am Institut für Künstliche Intelligenz. Hallo Anna!
+    emotion: professional
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Hallo Max! Vielen Dank für die Einladung. Ich freue mich sehr, hier zu sein.
+    emotion: friendly
+    pause_after: 0.5
+    
+  - speaker: Host
+    text: Anna, Sie forschen seit über zehn Jahren im Bereich Machine Learning. Was fasziniert Sie an diesem Gebiet?
+    emotion: curious
+    pause_after: 0.7
+    
+  - speaker: Gast
+    text: Was mich am meisten fasziniert, ist die Tatsache, dass wir Maschinen beibringen können zu lernen. Das klingt fast paradox, oder?
+    emotion: enthusiastic
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Wir programmieren nicht mehr jede einzelne Regel, sondern geben dem System Daten und es findet selbst die Muster.
+    emotion: explanatory
+    pause_after: 0.8
+    
+  - speaker: Host
+    text: Das ist wirklich beeindruckend! Können Sie uns ein praktisches Beispiel geben?
+    emotion: interested
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Natürlich! Nehmen wir die medizinische Bildanalyse. Früher mussten Ärzte jedes Röntgenbild manuell untersuchen.
+    emotion: professional
+    pause_after: 0.5
+    
+  - speaker: Gast
+    text: Heute können KI-Systeme Anomalien erkennen, die selbst erfahrene Radiologen manchmal übersehen.
+    emotion: serious
+    pause_after: 0.7
+    
+  - speaker: Gast
+    text: Das System wurde mit Millionen von Bildern trainiert und kann nun Muster erkennen, die für das menschliche Auge schwer zu identifizieren sind.
+    emotion: explanatory
+    pause_after: 0.9
+    
+  - speaker: Host
+    text: Wow, das rettet sicherlich Leben! Aber gibt es auch Herausforderungen?
+    emotion: thoughtful
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Absolut. Eine große Herausforderung ist die sogenannte Bias - Voreingenommenheit in den Daten.
+    emotion: serious
+    pause_after: 0.5
+    
+  - speaker: Gast
+    text: Wenn ein KI-System hauptsächlich mit Daten einer bestimmten Bevölkerungsgruppe trainiert wird, funktioniert es bei anderen möglicherweise nicht so gut.
+    emotion: concerned
+    pause_after: 0.8
+    
+  - speaker: Host
+    text: Das ist ein wichtiger Punkt. Wie gehen Sie in Ihrer Forschung damit um?
+    emotion: curious
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Wir legen großen Wert auf diverse Datensätze und transparente Algorithmen. Es geht nicht nur um Performance, sondern auch um Fairness.
+    emotion: professional
+    pause_after: 0.7
+    
+  - speaker: Host
+    text: Anna, was denken Sie - wohin entwickelt sich die KI in den nächsten zehn Jahren?
+    emotion: curious
+    pause_after: 0.7
+    
+  - speaker: Gast
+    text: Ich denke, wir werden eine engere Integration von KI in unseren Alltag sehen. Nicht als Ersatz für Menschen, sondern als intelligente Assistenten.
+    emotion: thoughtful
+    pause_after: 0.8
+    
+  - speaker: Gast
+    text: Systeme, die uns in komplexen Entscheidungen unterstützen, die repetitive Aufgaben übernehmen und uns mehr Zeit für kreative Arbeit geben.
+    emotion: optimistic
+    pause_after: 0.9
+    
+  - speaker: Host
+    text: Das klingt nach einer spannenden Zukunft! Anna, vielen Dank für diese interessanten Einblicke.
+    emotion: grateful
+    pause_after: 0.6
+    
+  - speaker: Gast
+    text: Sehr gerne! Es hat mir großen Spaß gemacht.
+    emotion: friendly
+    pause_after: 0.5
+    
+  - speaker: Host
+    text: Und Ihnen, liebe Hörerinnen und Hörer, danke ich fürs Zuhören. Bis zum nächsten Mal bei Tech Talk!
+    emotion: excited
+    pause_after: 1.0

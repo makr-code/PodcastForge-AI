@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .core.forge import PodcastForge
 from .core.config import PodcastStyle
+from .voices.library import get_voice_library
 
 console = Console()
 
@@ -23,6 +24,50 @@ def cli():
     Generiert Podcasts mit Ollama LLMs und ebook2audiobook TTS
     """
     pass
+
+
+@cli.command()
+@click.argument('file', required=False)
+def edit(file):
+    """
+    Öffnet den GUI-Editor für Podcast-Skripte
+    
+    Beispiel:
+    
+        podcastforge edit                    # Neues Projekt
+        podcastforge edit podcast.yaml       # Existierendes Projekt öffnen
+    """
+    console.print("[bold cyan]🎙️ Starte PodcastForge Editor...[/bold cyan]\n")
+    
+    try:
+        from .gui import PodcastEditor
+        import tkinter as tk
+        
+        root = tk.Tk()
+        editor = PodcastEditor(root)
+        
+        # Lade Datei falls angegeben
+        if file:
+            filepath = Path(file)
+            if filepath.exists():
+                console.print(f"[green]Lade Projekt: {filepath}[/green]")
+                # Editor wird Datei automatisch laden
+                # TODO: Implementiere auto-load in Editor
+            else:
+                console.print(f"[yellow]Warnung: Datei nicht gefunden: {filepath}[/yellow]")
+        
+        editor.run()
+        
+    except ImportError as e:
+        console.print(f"[red]Fehler: tkinter nicht installiert![/red]")
+        console.print("\n[yellow]Installation:[/yellow]")
+        console.print("  Ubuntu/Debian: sudo apt-get install python3-tk")
+        console.print("  macOS: brew install python-tk")
+        console.print("  Windows: tkinter ist normalerweise vorinstalliert\n")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Fehler beim Starten des Editors: {e}[/red]")
+        sys.exit(1)
 
 
 @cli.command()
@@ -171,6 +216,98 @@ def models():
     
     except Exception as e:
         console.print(f"[red]Fehler: {e}[/red]")
+
+
+@cli.command()
+def models():
+    """
+    Zeigt verfügbare Ollama Modelle
+    """
+    try:
+        import requests
+        response = requests.get("http://localhost:11434/api/tags")
+        
+        if response.status_code == 200:
+            models = response.json().get('models', [])
+            
+            console.print("\n[bold]Verfügbare Ollama Modelle:[/bold]\n")
+            
+            for model in models:
+                name = model['name']
+                size = model.get('size', 0) / (1024**3)  # GB
+                console.print(f"  • [cyan]{name}[/cyan] ({size:.1f} GB)")
+            
+            console.print(f"\n[dim]Gesamt: {len(models)} Modelle[/dim]")
+        else:
+            console.print("[red]Ollama nicht erreichbar[/red]")
+    
+    except Exception as e:
+        console.print(f"[red]Fehler: {e}[/red]")
+
+
+@cli.command()
+@click.option('--language', '-l', default=None, help='Filter nach Sprache (de, en, etc.)')
+@click.option('--gender', '-g', type=click.Choice(['male', 'female', 'neutral']), help='Filter nach Geschlecht')
+@click.option('--style', '-s', help='Filter nach Stil (professional, documentary, etc.)')
+def voices(language, gender, style):
+    """
+    Zeigt verfügbare Voice Library Stimmen
+    
+    Beispiele:
+    
+        podcastforge voices
+        podcastforge voices --language de
+        podcastforge voices --gender male --style professional
+    """
+    from .voices.library import VoiceGender, VoiceStyle
+    
+    voice_lib = get_voice_library()
+    
+    # Filter anwenden
+    filters = {}
+    if language:
+        filters['language'] = language
+    if gender:
+        filters['gender'] = VoiceGender(gender)
+    if style:
+        try:
+            filters['style'] = VoiceStyle(style.upper())
+        except ValueError:
+            console.print(f"[yellow]Unbekannter Stil: {style}[/yellow]")
+            console.print("Verfügbare Stile: professional, documentary, dramatic, etc.")
+            return
+    
+    voices_list = voice_lib.search(**filters)
+    
+    if not voices_list:
+        console.print("[yellow]Keine Stimmen gefunden mit den angegebenen Filtern[/yellow]")
+        return
+    
+    # Tabelle erstellen
+    from rich.table import Table
+    
+    table = Table(title=f"Voice Library{f' ({language})' if language else ''}")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Sprache", style="yellow")
+    table.add_column("Geschlecht", style="magenta")
+    table.add_column("Stil", style="blue")
+    table.add_column("Beschreibung", style="dim")
+    
+    for voice in voices_list:
+        table.add_row(
+            voice.id,
+            voice.display_name,
+            voice.language,
+            voice.gender.value,
+            voice.style.value,
+            voice.description[:50] + "..." if len(voice.description) > 50 else voice.description
+        )
+    
+    console.print("\n")
+    console.print(table)
+    console.print(f"\n[bold]Gefunden: {len(voices_list)} Stimmen[/bold]")
+    console.print(f"[dim]Gesamt in Bibliothek: {voice_lib.get_voice_count()} Stimmen[/dim]\n")
 
 
 def main():

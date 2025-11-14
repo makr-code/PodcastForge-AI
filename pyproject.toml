@@ -1,0 +1,188 @@
+# PodcastForge-AI Project Configuration
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podcastforge"
+version = "1.2.0"
+description = "AI-Powered Podcast Generation with Multi-Speaker TTS"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "PodcastForge Team", email = "info@podcastforge.ai"}
+]
+keywords = ["podcast", "tts", "ai", "ollama", "audio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "click>=8.0.0",
+    "rich>=10.0.0",
+    "pyyaml>=5.4.0",
+    "requests>=2.25.0",
+    "pydub>=0.25.0",
+    "librosa>=0.9.0",
+    "numpy>=1.21.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "bandit>=1.7.0",
+    "interrogate>=1.5.0",
+    "pre-commit>=3.0.0",
+    "safety>=2.3.0",
+]
+
+tts = [
+    "TTS>=0.22.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+]
+
+audio = [
+    "pygame>=2.5.0",
+    "simpleaudio>=1.0.4",
+]
+
+[project.scripts]
+podcastforge = "podcastforge.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/makr-code/PodcastForge-AI"
+Documentation = "https://github.com/makr-code/PodcastForge-AI/blob/main/README.md"
+Repository = "https://github.com/makr-code/PodcastForge-AI"
+Issues = "https://github.com/makr-code/PodcastForge-AI/issues"
+
+# Black Configuration
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# isort Configuration
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["podcastforge"]
+skip_gitignore = true
+
+# Flake8 Configuration (in .flake8 file, aber hier dokumentiert)
+# max-line-length = 100
+# extend-ignore = E203, W503, E501
+
+# MyPy Configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+# Pytest Configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = """
+    -ra
+    --strict-markers
+    --strict-config
+    --cov=src/podcastforge
+    --cov-report=term-missing:skip-covered
+    --cov-report=html
+    --cov-report=xml
+"""
+
+# Coverage Configuration
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+# Bandit Configuration (Security Linter)
+[tool.bandit]
+exclude_dirs = ["tests", "build", "dist"]
+skips = ["B101", "B601"]  # B101: assert_used, B601: paramiko_calls
+
+# Interrogate Configuration (Docstring Coverage)
+[tool.interrogate]
+ignore-init-method = true
+ignore-init-module = true
+ignore-magic = false
+ignore-semiprivate = false
+ignore-private = false
+ignore-property-decorators = false
+ignore-module = false
+ignore-nested-functions = false
+ignore-nested-classes = true
+fail-under = 80
+exclude = ["setup.py", "docs", "build", "tests"]
+verbose = 2
+quiet = false
+whitelist-regex = []
+color = true

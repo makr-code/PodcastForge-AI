@@ -9,6 +9,7 @@ from typing import List, Optional
 
 class PodcastStyle(Enum):
     """Podcast-Stil Optionen"""
+
     INTERVIEW = "interview"
     DISCUSSION = "discussion"
     EDUCATIONAL = "educational"
@@ -21,6 +22,7 @@ class PodcastStyle(Enum):
 @dataclass
 class Speaker:
     """Sprecher-Profil"""
+
     id: str
     name: str
     role: str
@@ -29,7 +31,7 @@ class Speaker:
     voice_sample: Optional[str] = None
     gender: str = "neutral"
     age: str = "adult"
-    
+
     def __post_init__(self):
         if not self.id:
             raise ValueError("Speaker ID ist erforderlich")
@@ -40,6 +42,7 @@ class Speaker:
 @dataclass
 class PodcastConfig:
     """Konfiguration für Podcast-Generierung"""
+
     topic: str
     style: PodcastStyle
     duration_minutes: int = 10
@@ -52,14 +55,14 @@ class PodcastConfig:
     voice_engine: str = "xtts"
     bitrate: str = "192k"
     sample_rate: int = 44100
-    
+
     def __post_init__(self):
         if isinstance(self.style, str):
             self.style = PodcastStyle(self.style)
-        
+
         if self.duration_minutes < 1:
             raise ValueError("Dauer muss mindestens 1 Minute sein")
-        
+
         if not self.speakers:
             raise ValueError("Mindestens ein Sprecher erforderlich")
 
@@ -67,13 +70,14 @@ class PodcastConfig:
 @dataclass
 class ScriptLine:
     """Eine Zeile im Podcast-Drehbuch"""
+
     speaker_id: str
     speaker_name: str
     text: str
     emotion: str = "neutral"
     pause_after: float = 0.5
     voice_profile: str = ""
-    
+
     def to_dict(self):
         return {
             "speaker_id": self.speaker_id,

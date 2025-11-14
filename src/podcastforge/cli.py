@@ -4,12 +4,13 @@ Command Line Interface für PodcastForge AI
 """
 
 import sys
-import click
-from rich.console import Console
 from pathlib import Path
 
-from .core.forge import PodcastForge
+import click
+from rich.console import Console
+
 from .core.config import PodcastStyle
+from .core.forge import PodcastForge
 from .voices.library import get_voice_library
 
 console = Console()
@@ -20,32 +21,33 @@ console = Console()
 def cli():
     """
     🎙️ PodcastForge AI - KI-gestützter Podcast-Generator
-    
+
     Generiert Podcasts mit Ollama LLMs und ebook2audiobook TTS
     """
     pass
 
 
 @cli.command()
-@click.argument('file', required=False)
+@click.argument("file", required=False)
 def edit(file):
     """
     Öffnet den GUI-Editor für Podcast-Skripte
-    
+
     Beispiel:
-    
+
         podcastforge edit                    # Neues Projekt
         podcastforge edit podcast.yaml       # Existierendes Projekt öffnen
     """
     console.print("[bold cyan]🎙️ Starte PodcastForge Editor...[/bold cyan]\n")
-    
+
     try:
-        from .gui import PodcastEditor
         import tkinter as tk
-        
+
+        from .gui import PodcastEditor
+
         root = tk.Tk()
         editor = PodcastEditor(root)
-        
+
         # Lade Datei falls angegeben
         if file:
             filepath = Path(file)
@@ -55,9 +57,9 @@ def edit(file):
                 # TODO: Implementiere auto-load in Editor
             else:
                 console.print(f"[yellow]Warnung: Datei nicht gefunden: {filepath}[/yellow]")
-        
+
         editor.run()
-        
+
     except ImportError as e:
         console.print(f"[red]Fehler: tkinter nicht installiert![/red]")
         console.print("\n[yellow]Installation:[/yellow]")
@@ -71,72 +73,70 @@ def edit(file):
 
 
 @cli.command()
-@click.option('--topic', '-t', required=True, help='Podcast-Thema')
-@click.option('--style', '-s',
-              type=click.Choice([s.value for s in PodcastStyle]),
-              default='discussion',
-              help='Podcast-Stil')
-@click.option('--duration', '-d', default=10, type=int, help='Dauer in Minuten')
-@click.option('--language', '-l', default='de', help='Sprache (de, en, etc.)')
-@click.option('--llm', default='llama2', help='Ollama LLM Modell')
-@click.option('--output', '-o', default='podcast.mp3', help='Ausgabedatei')
-@click.option('--music', help='Pfad zu Hintergrundmusik (optional)')
+@click.option("--topic", "-t", required=True, help="Podcast-Thema")
+@click.option(
+    "--style",
+    "-s",
+    type=click.Choice([s.value for s in PodcastStyle]),
+    default="discussion",
+    help="Podcast-Stil",
+)
+@click.option("--duration", "-d", default=10, type=int, help="Dauer in Minuten")
+@click.option("--language", "-l", default="de", help="Sprache (de, en, etc.)")
+@click.option("--llm", default="llama2", help="Ollama LLM Modell")
+@click.option("--output", "-o", default="podcast.mp3", help="Ausgabedatei")
+@click.option("--music", help="Pfad zu Hintergrundmusik (optional)")
 def generate(topic, style, duration, language, llm, output, music):
     """
     Generiert einen neuen Podcast
-    
+
     Beispiel:
-    
+
         podcastforge generate --topic "KI in der Medizin" --duration 15
     """
-    console.print("""
+    console.print(
+        """
 [bold cyan]╔══════════════════════════════════════╗
 ║       🎙️ PodcastForge AI 🤖          ║
 ║   KI-gestützte Podcast-Generierung    ║
 ╚══════════════════════════════════════╝[/bold cyan]
-    """)
-    
+    """
+    )
+
     try:
         # Initialisiere PodcastForge
-        forge = PodcastForge(
-            llm_model=llm,
-            language=language
-        )
-        
+        forge = PodcastForge(llm_model=llm, language=language)
+
         # Generiere Podcast
         podcast_file = forge.create_podcast(
-            topic=topic,
-            style=style,
-            duration=duration,
-            output=output,
-            background_music=music
+            topic=topic, style=style, duration=duration, output=output, background_music=music
         )
-        
+
         console.print(f"\n[bold green]🎉 Erfolg![/bold green]")
         console.print(f"[green]Podcast erstellt: {podcast_file}[/green]")
-    
+
     except Exception as e:
         console.print(f"[bold red]❌ Fehler: {str(e)}[/bold red]")
         sys.exit(1)
 
 
 @cli.command()
-@click.argument('script_path', type=click.Path(exists=True))
-@click.option('--output', '-o', default='podcast.mp3', help='Ausgabedatei')
+@click.argument("script_path", type=click.Path(exists=True))
+@click.option("--output", "-o", default="podcast.mp3", help="Ausgabedatei")
 def from_script(script_path, output):
     """
     Erstellt Podcast aus bestehendem Drehbuch
-    
+
     Beispiel:
-    
+
         podcastforge from-script mein_script.json
     """
     try:
         forge = PodcastForge()
         podcast_file = forge.create_from_script(script_path, output)
-        
+
         console.print(f"[bold green]✅ Podcast erstellt: {podcast_file}[/bold green]")
-    
+
     except Exception as e:
         console.print(f"[bold red]❌ Fehler: {str(e)}[/bold red]")
         sys.exit(1)
@@ -148,38 +148,40 @@ def test():
     Testet die Installation und Konfiguration
     """
     console.print("[cyan]🔍 Teste PodcastForge Installation...[/cyan]\n")
-    
+
     # Test 1: Python-Pakete
     console.print("[bold]1. Python-Pakete[/bold]")
-    packages = ['click', 'rich', 'pydub', 'requests']
-    
+    packages = ["click", "rich", "pydub", "requests"]
+
     for pkg in packages:
         try:
             __import__(pkg)
             console.print(f"  [green]✓[/green] {pkg}")
         except ImportError:
             console.print(f"  [red]✗[/red] {pkg} - Nicht installiert")
-    
+
     # Test 2: Ollama
     console.print("\n[bold]2. Ollama Verbindung[/bold]")
     try:
         import requests
+
         response = requests.get("http://localhost:11434/api/tags", timeout=2)
         if response.status_code == 200:
             console.print("  [green]✓[/green] Ollama läuft")
-            models = response.json().get('models', [])
+            models = response.json().get("models", [])
             console.print(f"  Verfügbare Modelle: {', '.join([m['name'] for m in models[:3]])}")
         else:
             console.print("  [yellow]⚠[/yellow] Ollama antwortet nicht korrekt")
     except:
         console.print("  [red]✗[/red] Ollama nicht erreichbar")
         console.print("  [dim]Starte Ollama mit: ollama serve[/dim]")
-    
+
     # Test 3: FFmpeg
     console.print("\n[bold]3. FFmpeg[/bold]")
     import subprocess
+
     try:
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=2)
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=2)
         if result.returncode == 0:
             console.print("  [green]✓[/green] FFmpeg installiert")
         else:
@@ -187,7 +189,7 @@ def test():
     except FileNotFoundError:
         console.print("  [red]✗[/red] FFmpeg nicht gefunden")
         console.print("  [dim]Installiere mit: apt-get install ffmpeg[/dim]")
-    
+
     console.print("\n[bold green]Test abgeschlossen![/bold green]")
 
 
@@ -198,22 +200,23 @@ def models():
     """
     try:
         import requests
+
         response = requests.get("http://localhost:11434/api/tags")
-        
+
         if response.status_code == 200:
-            models = response.json().get('models', [])
-            
+            models = response.json().get("models", [])
+
             console.print("\n[bold]Verfügbare Ollama Modelle:[/bold]\n")
-            
+
             for model in models:
-                name = model['name']
-                size = model.get('size', 0) / (1024**3)  # GB
+                name = model["name"]
+                size = model.get("size", 0) / (1024**3)  # GB
                 console.print(f"  • [cyan]{name}[/cyan] ({size:.1f} GB)")
-            
+
             console.print(f"\n[dim]Gesamt: {len(models)} Modelle[/dim]")
         else:
             console.print("[red]Ollama nicht erreichbar[/red]")
-    
+
     except Exception as e:
         console.print(f"[red]Fehler: {e}[/red]")
 
@@ -225,67 +228,73 @@ def models():
     """
     try:
         import requests
+
         response = requests.get("http://localhost:11434/api/tags")
-        
+
         if response.status_code == 200:
-            models = response.json().get('models', [])
-            
+            models = response.json().get("models", [])
+
             console.print("\n[bold]Verfügbare Ollama Modelle:[/bold]\n")
-            
+
             for model in models:
-                name = model['name']
-                size = model.get('size', 0) / (1024**3)  # GB
+                name = model["name"]
+                size = model.get("size", 0) / (1024**3)  # GB
                 console.print(f"  • [cyan]{name}[/cyan] ({size:.1f} GB)")
-            
+
             console.print(f"\n[dim]Gesamt: {len(models)} Modelle[/dim]")
         else:
             console.print("[red]Ollama nicht erreichbar[/red]")
-    
+
     except Exception as e:
         console.print(f"[red]Fehler: {e}[/red]")
 
 
 @cli.command()
-@click.option('--language', '-l', default=None, help='Filter nach Sprache (de, en, etc.)')
-@click.option('--gender', '-g', type=click.Choice(['male', 'female', 'neutral']), help='Filter nach Geschlecht')
-@click.option('--style', '-s', help='Filter nach Stil (professional, documentary, etc.)')
+@click.option("--language", "-l", default=None, help="Filter nach Sprache (de, en, etc.)")
+@click.option(
+    "--gender",
+    "-g",
+    type=click.Choice(["male", "female", "neutral"]),
+    help="Filter nach Geschlecht",
+)
+@click.option("--style", "-s", help="Filter nach Stil (professional, documentary, etc.)")
 def voices(language, gender, style):
     """
     Zeigt verfügbare Voice Library Stimmen
-    
+
     Beispiele:
-    
+
         podcastforge voices
         podcastforge voices --language de
         podcastforge voices --gender male --style professional
     """
     from .voices.library import VoiceGender, VoiceStyle
-    
+
     voice_lib = get_voice_library()
-    
+
     # Filter anwenden
     filters = {}
     if language:
-        filters['language'] = language
+        filters["language"] = language
     if gender:
-        filters['gender'] = VoiceGender(gender)
+        filters["gender"] = VoiceGender(gender)
     if style:
         try:
-            filters['style'] = VoiceStyle(style.upper())
+            filters["style"] = VoiceStyle(style.upper())
         except ValueError:
             console.print(f"[yellow]Unbekannter Stil: {style}[/yellow]")
             console.print("Verfügbare Stile: professional, documentary, dramatic, etc.")
             return
-    
+
     voices_list = voice_lib.search(**filters)
-    
+
     if not voices_list:
         console.print("[yellow]Keine Stimmen gefunden mit den angegebenen Filtern[/yellow]")
         return
-    
+
     # Tabelle erstellen
     from rich.table import Table
-    
+
     table = Table(title=f"Voice Library{f' ({language})' if language else ''}")
     table.add_column("ID", style="cyan")
     table.add_column("Name", style="green")
@@ -293,7 +302,7 @@ def voices(language, gender, style):
     table.add_column("Geschlecht", style="magenta")
     table.add_column("Stil", style="blue")
     table.add_column("Beschreibung", style="dim")
-    
+
     for voice in voices_list:
         table.add_row(
             voice.id,
@@ -301,9 +310,9 @@ def voices(language, gender, style):
             voice.language,
             voice.gender.value,
             voice.style.value,
-            voice.description[:50] + "..." if len(voice.description) > 50 else voice.description
+            voice.description[:50] + "..." if len(voice.description) > 50 else voice.description,
         )
-    
+
     console.print("\n")
     console.print(table)
     console.print(f"\n[bold]Gefunden: {len(voices_list)} Stimmen[/bold]")

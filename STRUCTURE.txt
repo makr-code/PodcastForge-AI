@@ -1,0 +1,38 @@
+.
+├── CONTRIBUTING.md
+├── Dockerfile
+├── LICENSE
+├── Makefile
+├── README.md
+├── STRUCTURE.txt
+├── config
+├── data
+│   └── prompts
+├── docker-compose.yml
+├── docs
+│   ├── api
+│   └── guides
+├── examples
+│   ├── demo.py
+│   ├── sample_script.json
+│   └── tech_podcast.py
+├── requirements.txt
+├── setup.py
+├── setup.sh
+├── src
+│   └── podcastforge
+│       ├── __init__.py
+│       ├── audio
+│       ├── cli.py
+│       ├── core
+│       ├── llm
+│       ├── parsers
+│       ├── tts
+│       ├── utils
+│       └── web
+└── tests
+    ├── __init__.py
+    ├── integration
+    └── unit
+
+20 directories, 16 files

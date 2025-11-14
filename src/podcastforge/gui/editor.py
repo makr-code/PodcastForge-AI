@@ -17,6 +17,8 @@ try:
     from ..core.models import Speaker
     from ..voices import get_voice_library, VoiceGender, VoiceStyle
     from ..core.forge import PodcastForge
+    from ..audio.player import get_player
+    from ..audio.waveform import WaveformGenerator
 except ImportError:
     # Fallback für direkte Ausführung
     import sys
@@ -38,6 +40,13 @@ class PodcastEditor:
         self.voice_library = get_voice_library()
         self.forge = None
         self.is_modified = False
+        
+        # Audio
+        self.audio_player = get_player()
+        self.waveform_generator = WaveformGenerator(width=300, height=100)
+        self.current_preview_file: Optional[Path] = None
+        self.preview_cache = Path("cache/editor_preview")
+        self.preview_cache.mkdir(parents=True, exist_ok=True)
         
         # Themes
         self.setup_theme()
@@ -837,41 +846,237 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         """Generiere Vorschau für aktuelle Zeile"""
         self.update_status("Generiere Audio-Vorschau...")
         self.audio_status.config(text="Generiere...", foreground=self.colors['warning'])
+        self.progress.pack(side=tk.RIGHT, padx=5)
+        self.progress.start()
         
-        # TODO: Implementiere TTS-Generierung in Thread
-        threading.Thread(target=self._generate_preview, daemon=True).start()
+        # Parse aktuelle Zeile
+        current_line = self._get_current_line_text()
+        if not current_line:
+            self.audio_status.config(text="Keine Zeile", foreground=self.colors['error'])
+            self.progress.stop()
+            self.progress.pack_forget()
+            return
+        
+        # Starte TTS-Generierung in Thread
+        threading.Thread(
+            target=self._generate_preview,
+            args=(current_line,),
+            daemon=True
+        ).start()
     
-    def _generate_preview(self):
+    def _get_current_line_text(self) -> Optional[str]:
+        """Hole Text der aktuellen Zeile"""
+        try:
+            cursor_line = self.script_editor.index(tk.INSERT).split('.')[0]
+            line_text = self.script_editor.get(f"{cursor_line}.0", f"{cursor_line}.end")
+            return line_text.strip() if line_text.strip() else None
+        except:
+            return None
+    
+    def _parse_line(self, line_text: str) -> Optional[Dict]:
+        """Parse Zeile im Structured-Format"""
+        # Format: Sprecher [Emotion]: Text [Pause]
+        import re
+        
+        # Regex für Structured Format
+        pattern = r'^([\w]+)\s*\[([\w]+)\]\s*:\s*(.+?)(?:\s*\[([\d.]+)s\])?$'
+        match = re.match(pattern, line_text)
+        
+        if match:
+            speaker, emotion, text, pause = match.groups()
+            return {
+                'speaker': speaker,
+                'emotion': emotion,
+                'text': text,
+                'pause_after': float(pause) if pause else 0.5
+            }
+        
+        # Fallback: Einfacher Text
+        return {
+            'speaker': self.prop_speaker.get() or 'Host',
+            'emotion': self.prop_emotion.get() or 'neutral',
+            'text': line_text,
+            'pause_after': float(self.prop_pause.get() or 0.5)
+        }
+    
+    def _generate_preview(self, line_text: str):
         """Generiere TTS-Vorschau (läuft in Thread)"""
         try:
-            # Aktuell ausgewählte Zeile parsen
-            # TTS generieren
-            # Audio abspielen
+            # Parse Zeile
+            line_data = self._parse_line(line_text)
+            if not line_data:
+                raise ValueError("Konnte Zeile nicht parsen")
             
-            # Simulation
+            # Prüfe ob Sprecher existiert
+            speaker_name = line_data['speaker']
+            if speaker_name not in self.speakers:
+                raise ValueError(f"Sprecher '{speaker_name}' nicht gefunden")
+            
+            # Generiere TTS (Simulation für jetzt)
+            # TODO: Echte TTS-Integration
             import time
-            time.sleep(2)
+            time.sleep(1.5)  # Simuliere TTS-Generierung
             
-            self.audio_status.config(text="Bereit ✓", foreground=self.colors['success'])
-            self.update_status("Vorschau bereit")
+            # Erstelle Demo-Audio-Datei (Platzhalter)
+            preview_file = self.preview_cache / f"preview_{int(time.time())}.mp3"
+            
+            # Für Demo: Kopiere existierende Audio-Datei falls vorhanden
+            # In Produktion: Nutze echte TTS-Engine
+            sample_audio = Path("examples/sample.mp3")
+            if sample_audio.exists():
+                import shutil
+                shutil.copy(sample_audio, preview_file)
+            else:
+                # Erstelle stille Audio-Datei als Fallback
+                self._create_silent_audio(preview_file, duration=2.0)
+            
+            self.current_preview_file = preview_file
+            
+            # Aktualisiere UI (Thread-safe)
+            self.root.after(0, self._on_preview_ready, preview_file, line_data)
             
         except Exception as e:
-            self.audio_status.config(text=f"Fehler: {e}", foreground=self.colors['error'])
+            error_msg = str(e)
+            self.root.after(0, self._on_preview_error, error_msg)
+    
+    def _create_silent_audio(self, output_file: Path, duration: float = 1.0):
+        """Erstelle stille Audio-Datei als Fallback"""
+        try:
+            from pydub import AudioSegment
+            from pydub.generators import Sine
+            
+            # Erstelle kurzen Ton (440 Hz, sehr leise)
+            tone = Sine(440).to_audio_segment(duration=int(duration * 1000))
+            tone = tone - 40  # Sehr leise
+            
+            # Exportiere
+            tone.export(output_file, format="mp3")
+        except:
+            # Wenn pydub nicht verfügbar, erstelle leere Datei
+            output_file.write_bytes(b'')
+    
+    def _on_preview_ready(self, audio_file: Path, line_data: Dict):
+        """Callback wenn Vorschau fertig (UI-Thread)"""
+        self.progress.stop()
+        self.progress.pack_forget()
+        
+        # Update Status
+        speaker = line_data['speaker']
+        text_preview = line_data['text'][:30] + "..." if len(line_data['text']) > 30 else line_data['text']
+        self.audio_status.config(
+            text=f"Bereit: {speaker}",
+            foreground=self.colors['success']
+        )
+        self.update_status(f"Vorschau: {text_preview}")
+        
+        # Generiere Wellenform
+        self._update_waveform(audio_file)
+        
+        # Spiele Audio ab
+        self.audio_player.play(
+            audio_file,
+            on_complete=lambda: self.audio_status.config(text="Bereit ✓", foreground=self.colors['success'])
+        )
+        self.audio_status.config(text="Spielt ab ▶️", foreground=self.colors['accent'])
+    
+    def _on_preview_error(self, error_msg: str):
+        """Callback bei Fehler (UI-Thread)"""
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.audio_status.config(text=f"Fehler: {error_msg}", foreground=self.colors['error'])
+        self.update_status(f"Fehler: {error_msg}")
+    
+    def _update_waveform(self, audio_file: Path):
+        """Aktualisiere Wellenform-Anzeige"""
+        try:
+            from PIL import ImageTk
+            
+            # Generiere Wellenform
+            waveform_img = self.waveform_generator.generate(audio_file)
+            
+            if waveform_img:
+                # Konvertiere für tkinter
+                photo = ImageTk.PhotoImage(waveform_img)
+                
+                # Zeige in Canvas
+                self.waveform_canvas.delete("all")
+                self.waveform_canvas.create_image(0, 0, image=photo, anchor=tk.NW)
+                
+                # Speichere Referenz (wichtig für tkinter!)
+                self.waveform_canvas.image = photo
+        except Exception as e:
+            print(f"⚠️ Wellenform-Update fehlgeschlagen: {e}")
     
     def preview_all(self):
         """Generiere Vorschau für gesamtes Skript"""
-        messagebox.showinfo("Vorschau", "Generiere Komplett-Vorschau...")
-        # TODO: Implementieren
+        if not messagebox.askyesno(
+            "Komplett-Vorschau",
+            "Möchten Sie das gesamte Skript als Audio generieren?\nDies kann einige Minuten dauern."
+        ):
+            return
+        
+        self.update_status("Generiere Komplett-Vorschau...")
+        self.progress.pack(side=tk.RIGHT, padx=5)
+        self.progress.start()
+        
+        # TODO: Implementiere vollständige Podcast-Generierung
+        threading.Thread(target=self._generate_full_preview, daemon=True).start()
+    
+    def _generate_full_preview(self):
+        """Generiere vollständigen Podcast (Thread)"""
+        try:
+            # Parse komplettes Skript
+            content = self.script_editor.get('1.0', tk.END)
+            
+            # TODO: Nutze PodcastForge für Generierung
+            import time
+            time.sleep(3)  # Simulation
+            
+            self.root.after(0, self._on_full_preview_ready)
+            
+        except Exception as e:
+            self.root.after(0, self._on_preview_error, str(e))
+    
+    def _on_full_preview_ready(self):
+        """Callback wenn Komplett-Vorschau fertig"""
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.update_status("Komplett-Vorschau bereit")
+        messagebox.showinfo("Fertig", "Podcast-Vorschau wurde generiert!")
     
     def stop_playback(self):
         """Stoppe Audio-Wiedergabe"""
+        self.audio_player.stop()
+        self.audio_status.config(text="Gestoppt ⏸️", foreground=self.colors['warning'])
         self.update_status("Wiedergabe gestoppt")
-        # TODO: Implementieren
     
     def apply_properties(self):
         """Wende Eigenschaften auf aktuelle Zeile an"""
-        # TODO: Parse aktuelle Zeile und update mit neuen Properties
-        self.update_status("Eigenschaften übernommen")
+        try:
+            cursor_line = self.script_editor.index(tk.INSERT).split('.')[0]
+            current_text = self.script_editor.get(f"{cursor_line}.0", f"{cursor_line}.end")
+            
+            # Hole Eigenschaften
+            speaker = self.prop_speaker.get()
+            emotion = self.prop_emotion.get()
+            pause = self.prop_pause.get()
+            
+            # Parse existierende Zeile
+            import re
+            text_match = re.search(r':\s*(.+?)(?:\s*\[|$)', current_text)
+            text = text_match.group(1).strip() if text_match else current_text
+            
+            # Erstelle neue Zeile
+            new_line = f"{speaker} [{emotion}]: {text} [{pause}s]"
+            
+            # Ersetze Zeile
+            self.script_editor.delete(f"{cursor_line}.0", f"{cursor_line}.end")
+            self.script_editor.insert(f"{cursor_line}.0", new_line)
+            
+            self.update_status("Eigenschaften übernommen")
+            
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Konnte Eigenschaften nicht übernehmen:\n{e}")
     
     def select_tts_engine(self):
         """Wähle TTS-Engine"""

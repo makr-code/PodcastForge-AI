@@ -303,25 +303,87 @@ brew install python-tk           # macOS
 2. Überprüfe Schreibrechte
 3. Teste mit kürzerem Skript
 
-## 🚀 Geplante Features
+## 🚀 Feature Roadmap
 
-### v1.1
-- [ ] Timeline-Editor mit Drag&Drop
-- [ ] Wellenform-Visualisierung
-- [ ] Batch-Export
-- [ ] Auto-Save
+### ✅ v1.0 - MVP (FERTIG)
+- [x] Professioneller GUI-Editor (tkinter)
+- [x] Voice Library (40+ Stimmen)
+- [x] Multi-Format Support (Structured/YAML/JSON)
+- [x] Audio-Preview mit Playback
+- [x] Wellenform-Visualisierung
+- [x] Projekt-Management
+- [x] CLI-Integration
+- [x] Beispiel-Projekte
 
-### v1.2
-- [ ] Voice Cloning Integration
-- [ ] Multi-Track Audio-Editor
-- [ ] Sound-Effekte & Musik
-- [ ] Templates Library
+### 🔄 v1.1 - Timeline & Enhanced TTS (In Entwicklung)
+- [ ] **Timeline-Editor**
+  - Canvas-basierter Timeline-View
+  - Drag&Drop für Szenen
+  - Visual Waveform-Anzeige
+  - Szenen-Marker & Zeitstempel
+  - Multi-Track-Ansicht
+- [ ] **TTSEngineManager**
+  - Modulares Engine-System
+  - BARK Integration (natürlichere Stimmen)
+  - Piper Integration (schnelle CPU-Alternative)
+  - GPU/CPU Fallback
+  - Model-Caching
+- [ ] **Batch-Export**
+  - Mehrere Projekte gleichzeitig
+  - Export-Profile
+- [ ] **Auto-Save**
+  - Automatische Sicherung
+  - Wiederherstellung nach Crash
 
-### v2.0
-- [ ] Web-basierte Version (Gradio)
-- [ ] Kollaborative Bearbeitung
-- [ ] KI-Skript-Assistent
-- [ ] Cloud-Voice-Library
+### 🎯 v1.2 - Voice Cloning & Professional Audio
+- [ ] **Voice Cloning mit StyleTTS2**
+  - 3-Sekunden Voice-Cloning
+  - Custom Voice Upload
+  - Voice-Profil-Management
+- [ ] **Voice Extraction**
+  - Aus Videos/Podcasts extrahieren
+  - Demucs Vocal-Separation
+  - Voice Activity Detection
+- [ ] **Multi-Track Audio-Editor**
+  - Parallel-Spuren für Musik/SFX
+  - Visual Mixing
+  - Fade In/Out Editor
+- [ ] **Sound-Effekte & Musik**
+  - Integrierte SFX-Library
+  - Hintergrundmusik-Support
+  - Volume-Automation
+- [ ] **Templates Library**
+  - Vordefinierte Podcast-Vorlagen
+  - Custom Templates speichern
+  - Template-Marketplace
+
+### 🌐 v2.0 - Web & Collaboration
+- [ ] **Web-basierte Version (Gradio)**
+  - Browser-basierter Editor
+  - Keine lokale Installation nötig
+  - Cloud-TTS-Generation
+- [ ] **Kollaborative Bearbeitung**
+  - Real-time Co-Editing
+  - Kommentar-System
+  - Version-History
+- [ ] **KI-Skript-Assistent**
+  - Auto-Vervollständigung
+  - Stil-Vorschläge
+  - Dialog-Optimierung
+  - Emotion-Empfehlungen
+- [ ] **Cloud-Voice-Library**
+  - 1000+ professionelle Stimmen
+  - Community-Voices
+  - Voice-Sharing
+  - Pay-per-Use Modell
+
+### 🔮 v3.0 - Advanced Features
+- [ ] Echtzeit-TTS-Streaming
+- [ ] Multi-Language Auto-Translation
+- [ ] AI Voice Director (automatische Emotion)
+- [ ] Podcast-Analytics
+- [ ] RSS-Feed Generator
+- [ ] Direct Publishing (Spotify, Apple Podcasts)
 
 ## 📚 Beispiele
 

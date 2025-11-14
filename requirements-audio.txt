@@ -1,0 +1,15 @@
+# Audio-Modul Anforderungen
+# Für TTS-Preview und Audio-Playback im Editor
+
+# Audio-Playback (mindestens eines)
+pygame>=2.5.0              # Empfohlen: Gute Cross-Platform Unterst\u00fctzung
+# ODER:
+# simpleaudio>=1.0.4       # Alternative: Einfacher, aber weniger Features
+
+# Wellenform-Visualisierung
+Pillow>=10.0.0             # Für Bild-Generierung
+numpy>=1.24.0              # Für Audio-Daten-Verarbeitung
+
+# Audio-Verarbeitung (bereits in requirements.txt)
+# pydub>=0.25.1
+# librosa>=0.10.0

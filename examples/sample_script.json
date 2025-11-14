@@ -1,0 +1,42 @@
+{
+  "title": "KI und Ethik - Ein kritischer Dialog",
+  "description": "Beispiel-Drehbuch für einen Podcast über KI-Ethik",
+  "language": "de",
+  "speakers": {
+    "moderator": "Sarah Weber - Moderatorin",
+    "ethiker": "Prof. Michael Braun - Ethiker",
+    "entwickler": "Lisa Tech - KI-Entwicklerin"
+  },
+  "script": [
+    {
+      "speaker": "Sarah Weber",
+      "text": "Herzlich willkommen zu unserem Podcast über KI und Ethik. Heute diskutieren wir über die ethischen Herausforderungen künstlicher Intelligenz.",
+      "emotion": "neutral"
+    },
+    {
+      "speaker": "Prof. Michael Braun",
+      "text": "Vielen Dank für die Einladung. Das Thema könnte aktueller nicht sein. KI-Systeme treffen heute Entscheidungen, die unser Leben massiv beeinflussen.",
+      "emotion": "serious"
+    },
+    {
+      "speaker": "Lisa Tech",
+      "text": "Absolut. Als Entwicklerin sehe ich täglich, wie wichtig es ist, ethische Überlegungen von Anfang an in den Entwicklungsprozess einzubeziehen.",
+      "emotion": "thoughtful"
+    },
+    {
+      "speaker": "Sarah Weber",
+      "text": "Professor Braun, was sind denn die größten ethischen Herausforderungen bei KI?",
+      "emotion": "curious"
+    },
+    {
+      "speaker": "Prof. Michael Braun",
+      "text": "Es gibt drei Hauptbereiche: Erstens die Frage der Verantwortung - wer haftet, wenn eine KI Fehler macht? Zweitens Fairness und Bias - KI-Systeme können Vorurteile verstärken. Und drittens Transparenz - oft verstehen selbst Entwickler nicht vollständig, wie ihre KI zu Entscheidungen kommt.",
+      "emotion": "serious"
+    },
+    {
+      "speaker": "Lisa Tech",
+      "text": "Das stimmt. Bei uns im Team arbeiten wir mit sogenannten 'Explainable AI' Methoden, um nachvollziehbar zu machen, warum das System bestimmte Entscheidungen trifft. Aber es bleibt eine große Herausforderung.",
+      "emotion": "thoughtful"
+    }
+  ]
+}

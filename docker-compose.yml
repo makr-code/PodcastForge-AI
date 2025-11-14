@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: podcastforge-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - podcastforge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # PodcastForge AI Service
+  podcastforge:
+    build: .
+    container_name: podcastforge-ai
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./output:/output
+      - ./examples:/examples:ro
+    networks:
+      - podcastforge
+    command: test
+    stdin_open: true
+    tty: true
+
+networks:
+  podcastforge:
+    driver: bridge
+
+volumes:
+  ollama_data:

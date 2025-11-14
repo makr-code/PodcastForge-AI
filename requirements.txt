@@ -1,0 +1,36 @@
+# Core dependencies
+click>=8.1.7
+rich>=13.6.0
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Audio processing
+pydub>=0.25.1
+soundfile>=0.12.1
+librosa>=0.10.1
+scipy>=1.11.0
+numpy>=1.24.0
+
+# Text processing
+nltk>=3.8.1
+beautifulsoup4>=4.12.2
+markdown>=3.5
+
+# TTS engines
+TTS>=0.22.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Progress and CLI
+tqdm>=4.66.0
+colorama>=0.4.6
+
+# Optional: Alternative TTS
+# bark>=0.1.5
+# edge-tts>=6.1.0
+
+# Web interface (optional)
+# fastapi>=0.104.0
+# uvicorn>=0.24.0
+# gradio>=4.0.0

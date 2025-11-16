@@ -191,8 +191,21 @@ class ThreadManager:
                 def progress_callback(progress: float, message: str):
                     self._notify_progress(task_id, progress, message)
 
-                # Execute task
-                result = task_fn(task_id=task_id, progress_callback=progress_callback)
+                # Execute task. Support multiple possible task_fn signatures:
+                # 1) task_fn(task_id=..., progress_callback=...)
+                # 2) task_fn(task_id, progress_callback)
+                # 3) task_fn()
+                try:
+                    result = task_fn(task_id=task_id, progress_callback=progress_callback)
+                except TypeError:
+                    try:
+                        result = task_fn(task_id, progress_callback)
+                    except TypeError:
+                        try:
+                            result = task_fn()
+                        except Exception as e:
+                            # re-raise to be handled by outer except
+                            raise
 
                 # Success
                 task_result = TaskResult(
@@ -201,11 +214,33 @@ class ThreadManager:
                 self._notify_completed(task_id, result)
 
             except Exception as e:
-                logger.error(f"Task {task_id} failed: {e}", exc_info=True)
-                task_result = TaskResult(
-                    task_id=task_id, status=TaskStatus.FAILED, error=e, metadata=metadata
-                )
-                self._notify_failed(task_id, e)
+                # Handle cooperative cancellation specially
+                try:
+                    from ..tts.engine_manager import CancelledError
+
+                    if isinstance(e, CancelledError):
+                        logger.info(f"Task {task_id} cancelled: {e}")
+                        # mark metadata (do not rebind outer 'metadata')
+                        meta = metadata or {}
+                        meta['cancelled'] = True
+                        task_result = TaskResult(
+                            task_id=task_id, status=TaskStatus.CANCELLED, error=e, metadata=meta
+                        )
+                        # Notify observers about failure/cancel (legacy hook)
+                        self._notify_failed(task_id, e)
+                    else:
+                        logger.error(f"Task {task_id} failed: {e}", exc_info=True)
+                        task_result = TaskResult(
+                            task_id=task_id, status=TaskStatus.FAILED, error=e, metadata=metadata
+                        )
+                        self._notify_failed(task_id, e)
+                except Exception:
+                    # Fallback: treat as failure
+                    logger.error(f"Task {task_id} failed (fallback): {e}", exc_info=True)
+                    task_result = TaskResult(
+                        task_id=task_id, status=TaskStatus.FAILED, error=e, metadata=metadata
+                    )
+                    self._notify_failed(task_id, e)
 
             # Put result in queue
             self.result_queue.put(task_result)
@@ -382,7 +417,8 @@ def get_thread_manager(max_workers: int = 4) -> ThreadManager:
         ThreadManager instance
     """
     global _thread_manager
-    if _thread_manager is None:
+    # If a previously created manager was shut down, create a fresh one
+    if _thread_manager is None or getattr(_thread_manager, "_shutdown", False):
         _thread_manager = ThreadManager(max_workers=max_workers)
     return _thread_manager
 

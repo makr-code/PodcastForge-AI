@@ -1,0 +1,61 @@
+project:
+  title: "AI & TTS Deep Dive"
+  author: "PodcastForge Sample"
+  language: de
+  description: "Ein Beispiel-Podcast über Künstliche Intelligenz und Text-to-Speech (TTS)."
+sections:
+  - id: episode1
+    title: "Episode 1 — Einführung in KI & TTS"
+    items:
+      - type: utterance
+        id: u001
+        speaker: Host
+        text: "Willkommen zur ersten Episode unseres Deep-Dive Podcasts über Künstliche Intelligenz und Text-to-Speech."
+      - type: utterance
+        id: u002
+        speaker: Host
+        text: "Heute sprechen wir mit ExpertInnen über die Grundlagen, Anwendungen und Herausforderungen moderner TTS-Systeme."
+      - type: utterance
+        id: u003
+        speaker: Expert
+        text: "Vielen Dank für die Einladung. Ich freue mich, über die aktuellen Fortschritte in neuronalen Sprachmodellen zu sprechen."
+      - type: utterance
+        id: u004
+        speaker: Expert
+        text: "Moderne TTS-Systeme nutzen oft neuronale Netzwerke, die auf riesigen Sprachkorpora trainiert werden. Das erlaubt natürlichere und emotionalere Stimmen."
+      - type: utterance
+        id: u005
+        speaker: Host
+        text: "Welche Rolle spielt Voice Cloning und wie kann man das verantwortungsvoll einsetzen?"
+      - type: utterance
+        id: u006
+        speaker: Expert
+        text: "Voice Cloning kann sehr nützlich sein, etwa bei der Lokalisierung von Inhalten. Gleichzeitig sind Zustimmung und Schutz der Personenstimmen kritisch."
+      - type: utterance
+        id: u007
+        speaker: Guest
+        text: "Ich habe kürzlich ein Projekt gemacht, bei dem wir TTS nutzten, um Hörbücher vorzulesen — die Qualität war beeindruckend."
+      - type: utterance
+        id: u008
+        speaker: Guest
+        text: "Aber es gab auch Herausforderungen: Intonation, Pausen und natürliches Sprechen müssen sorgfältig abgestimmt werden."
+      - type: utterance
+        id: u009
+        speaker: Host
+        text: "Welche praktischen Tipps würdet ihr Forschern oder Produzenten geben, die TTS einsetzen möchten?"
+      - type: utterance
+        id: u010
+        speaker: Expert
+        text: "Start small, nutze hochwertige Trainingsdaten oder geprüfte Voice-Presets, und teste auf Diversität und Bias."
+      - type: utterance
+        id: u011
+        speaker: Host
+        text: "Danke — zum Abschluss, was sind spannende Trends, auf die wir achten sollten?"
+      - type: utterance
+        id: u012
+        speaker: Expert
+        text: "Sprecher-Adaptation in Echtzeit, multimodale Modelle und effizientere, datensparsame Trainingsmethoden sind spannend."
+voice_map:
+  Host: "professional_male"
+  Expert: "professional_female"
+  Guest: "casual_voice"

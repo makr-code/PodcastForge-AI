@@ -16,9 +16,8 @@ import yaml
 try:
     from ..audio.player import get_player
     from ..audio.waveform import WaveformGenerator
-    from ..core.config import PodcastConfig, PodcastStyle
+    from ..core.config import PodcastConfig, PodcastStyle, Speaker
     from ..core.forge import PodcastForge
-    from ..core.models import Speaker
     from ..voices import VoiceGender, VoiceStyle, get_voice_library
 except ImportError:
     # Fallback für direkte Ausführung
@@ -26,11 +25,23 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from ..core.settings import get_setting
+from ..core.events import get_event_bus
+from ..integrations.script_orchestrator import synthesize_script_preview
+import tempfile
+import shutil
+from ..gui.threading_base import get_thread_manager
+
 
 class PodcastEditor:
-    """Haupt-Editor-Klasse für Podcast-Skripte"""
+    """Haupt-Editor-Klasse für Podcast-Skripte
 
-    def __init__(self, root: Optional[tk.Tk] = None):
+    When `embedded=True`, the editor will not create its own menu or toolbar
+    so it can be embedded into a host window or frame without duplicating
+    UI chrome.
+    """
+
+    def __init__(self, root: Optional[tk.Tk] = None, embedded: bool = False):
         self.root = root or tk.Tk()
         self.root.title("PodcastForge Editor - Professioneller Podcast-Skript-Editor")
         self.root.geometry("1400x900")
@@ -54,8 +65,10 @@ class PodcastEditor:
         self.setup_theme()
 
         # UI aufbauen
-        self.setup_menu()
-        self.setup_toolbar()
+        # Wenn eingebettet, skippe Menü/Toolbar um doppelte UI zu vermeiden.
+        if not embedded:
+            self.setup_menu()
+            self.setup_toolbar()
         self.setup_main_layout()
         self.setup_status_bar()
 
@@ -65,29 +78,26 @@ class PodcastEditor:
         # Projekt initialisieren
         self.new_project()
 
+        # Subscribe to generation events
+        try:
+            eb = get_event_bus()
+            eb.subscribe('script.generate.request', self._on_generate_request)
+            eb.subscribe('script.tts_progress', self._on_script_progress)
+            eb.subscribe('script.preview_ready', self._on_script_preview_ready)
+        except Exception:
+            pass
+
     def setup_theme(self):
-        """Konfiguriere moderne Themes"""
-        style = ttk.Style()
-        style.theme_use("clam")
+        """Konfiguriere moderne Themes (delegiert an `components.apply_theme`)."""
+        try:
+            from .components import apply_theme
 
-        # Farb-Schema
-        self.colors = {
-            "bg": "#2b2b2b",
-            "fg": "#ffffff",
-            "accent": "#4a90e2",
-            "success": "#5cb85c",
-            "warning": "#f0ad4e",
-            "error": "#d9534f",
-            "editor_bg": "#1e1e1e",
-            "editor_fg": "#d4d4d4",
-            "speaker1": "#569cd6",  # Blau
-            "speaker2": "#ce9178",  # Orange
-            "speaker3": "#4ec9b0",  # Türkis
-            "emotion": "#c586c0",  # Lila
-            "pause": "#6a9955",  # Grün
-        }
-
-        self.root.configure(bg=self.colors["bg"])
+            apply_theme(self.root)
+            # read back palette if present
+            self.colors = getattr(self.root, "theme_colors", {})
+        except Exception:
+            # fallback to minimal palette
+            self.colors = {"bg": "#2b2b2b", "editor_bg": "#1e1e1e", "editor_fg": "#d4d4d4"}
 
     def setup_menu(self):
         """Erstelle Menüleiste"""
@@ -165,6 +175,7 @@ class PodcastEditor:
             ("|", None),
             ("🎤 Sprecher", self.add_speaker),
             ("🎨 Stimmen", self.show_voice_library),
+            ("⚙️ Generate", self.open_generate_dialog),
             ("|", None),
             ("💿 Export", self.export_audio),
         ]
@@ -285,9 +296,19 @@ class PodcastEditor:
         self.update_voice_list()
 
         # Voice verwenden Button
-        ttk.Button(
-            voice_frame, text="Als Sprecher verwenden", command=self.use_voice_as_speaker
-        ).pack(pady=5)
+        btn_frame = ttk.Frame(voice_frame)
+        btn_frame.pack(pady=5)
+
+        ttk.Button(btn_frame, text="Als Sprecher verwenden", command=self.use_voice_as_speaker).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="Vorschau", command=self._on_preview_selected_voice).pack(side=tk.LEFT, padx=4)
+
+        # Drag & Drop helpers: start drag on press, handle drop on editor
+        self.voice_listbox.bind('<ButtonPress-1>', self._voice_drag_start)
+        self.voice_listbox.bind('<B1-Motion>', self._voice_drag_motion)
+        # Right-click context menu for preview
+        self.voice_listbox.bind('<Button-3>', self._on_voice_right_click)
+        # track drag index
+        self._dragged_voice_index = None
 
     def setup_center_panel(self, parent):
         """Mittleres Panel: Skript-Editor"""
@@ -313,6 +334,9 @@ class PodcastEditor:
         editor_frame = ttk.Frame(parent)
         editor_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
+        # Draft Pane: list of ingested utterances / draft manifest
+        self.setup_draft_pane(parent)
+
         # Line Numbers
         self.line_numbers = tk.Text(
             editor_frame,
@@ -334,7 +358,7 @@ class PodcastEditor:
             bg=self.colors["editor_bg"],
             fg=self.colors["editor_fg"],
             insertbackground=self.colors["accent"],
-            font=("Consolas", 11),
+            font=("Consolas", int(get_setting("ui.editor_font_size", 11))),
             wrap=tk.WORD,
             undo=True,
             maxundo=-1,
@@ -346,10 +370,186 @@ class PodcastEditor:
         # Syntax-Highlighting Tags
         self.setup_syntax_tags()
 
+        # Drag highlight tag for DnD feedback
+        try:
+            hl_color = self.colors.get("accent", "#3a7")
+        except Exception:
+            hl_color = "#3a7"
+        self.script_editor.tag_configure("drag_highlight", background=hl_color)
+        self._drag_highlight_line = None
+
         # Bindings
         self.script_editor.bind("<KeyRelease>", self.on_text_change)
         self.script_editor.bind("<Control-Return>", lambda e: self.insert_line())
         self.script_editor.bind("<<Modified>>", self.on_modified)
+        # Allow dropping a voice onto the editor (mouse release triggers drop)
+        self.script_editor.bind('<ButtonRelease-1>', self._voice_drop_on_editor)
+        # Ensure widget supports undo for drag/drop recover
+        try:
+            self.script_editor.config(undo=True, maxundo=-1)
+        except Exception:
+            pass
+
+    def setup_draft_pane(self, parent):
+        """Create a small Draft pane above the editor for ingested utterances."""
+        draft_frame = ttk.LabelFrame(parent, text="Draft / Ingested Utterances", padding=6)
+        draft_frame.pack(fill=tk.X, padx=5, pady=(0, 6))
+
+        # Listbox with simple summary
+        self.draft_listbox = tk.Listbox(draft_frame, height=4, font=("Consolas", 10))
+        self.draft_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        self.draft_listbox.bind('<Double-1>', self._on_draft_double_click)
+
+        btns = ttk.Frame(draft_frame)
+        btns.pack(side=tk.RIGHT)
+
+        ttk.Button(btns, text="Import Draft", command=self._import_draft).pack(side=tk.TOP, pady=2)
+        ttk.Button(btns, text="Save Draft", command=self._save_draft).pack(side=tk.TOP, pady=2)
+        ttk.Button(btns, text="Generate", command=self.open_generate_dialog).pack(side=tk.TOP, pady=2)
+
+        # Internal draft model: list of dicts (utterance summaries)
+        self._draft_items = []
+
+    def _import_draft(self):
+        """Import a draft manifest (YAML/JSON) and populate the draft pane."""
+        path = filedialog.askopenfilename(title="Import Draft Manifest", filetypes=[("YAML", "*.yaml;*.yml"), ("JSON", "*.json"), ("All", "*")])
+        if not path:
+            return
+        try:
+            data = None
+            if path.lower().endswith(('.yaml', '.yml')):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+            else:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+            # Extract utterances for list display
+            items = []
+            for sec in data.get('sections', []) if isinstance(data, dict) else []:
+                for it in sec.get('items', []):
+                    if it.get('type') == 'utterance':
+                        items.append({'id': it.get('id'), 'speaker': it.get('speaker'), 'text': it.get('text')})
+
+            self._draft_items = items
+            self.draft_listbox.delete(0, tk.END)
+            for u in items:
+                display = f"{u.get('id') or '---'} | {u.get('speaker') or 'unspecified'}: { (u.get('text') or '')[:60] }"
+                self.draft_listbox.insert(tk.END, display)
+
+            # Publish event that a draft was ingested so editor can open in draft mode
+            try:
+                eb = get_event_bus()
+                eb.publish('script.ingested', {'manifest': path})
+            except Exception:
+                pass
+
+            self.update_status(f"Draft manifest importiert: {Path(path).name}")
+        except Exception as e:
+            messagebox.showerror("Import fehlgeschlagen", str(e))
+
+    def _save_draft(self):
+        """Save current draft items to a YAML manifest."""
+        if not self._draft_items:
+            messagebox.showwarning("Keine Drafts", "Keine Draft-Utterances vorhanden")
+            return
+        path = filedialog.asksaveasfilename(title="Save Draft Manifest", defaultextension='.yaml', filetypes=[('YAML','*.yaml'),('All','*.*')])
+        if not path:
+            return
+        try:
+            # Create a minimal manifest container
+            manifest = {'project': {'title': self.current_file.name if self.current_file else 'untitled'}, 'sections': [{'id': 'draft', 'title': 'Draft', 'items': []}]}
+            for u in self._draft_items:
+                manifest['sections'][0]['items'].append({'type': 'utterance', 'id': u.get('id'), 'speaker': u.get('speaker'), 'text': u.get('text')})
+
+            with open(path, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(manifest, f, sort_keys=False, allow_unicode=True)
+
+            self.update_status(f"Draft gespeichert: {Path(path).name}")
+        except Exception as e:
+            messagebox.showerror("Save fehlgeschlagen", str(e))
+
+    def _on_draft_double_click(self, event):
+        """Open the selected draft item in the main editor for inline editing."""
+        try:
+            sel = self.draft_listbox.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            if idx < 0 or idx >= len(self._draft_items):
+                return
+            item = self._draft_items[idx]
+            speaker = item.get('speaker') or ''
+            text = item.get('text') or ''
+            emotion = item.get('emotion') or ''
+            pause = item.get('pause_after') or item.get('pause') or ''
+
+            # Ensure speaker exists in speakers list
+            if speaker and speaker not in self.speakers:
+                try:
+                    self.speakers[speaker] = Speaker(name=speaker, voice_sample='', description='')
+                    self.update_speakers_list()
+                except Exception:
+                    pass
+
+            # Build structured line: Speaker [Emotion]: Text [0.5s]
+            parts = [f"{speaker}"]
+            if emotion:
+                parts.append(f"[{emotion}]")
+
+            main = f": {text}"
+            if pause:
+                try:
+                    p = float(pause)
+                    main = f": {text} [{p}s]"
+                except Exception:
+                    main = f": {text} [{pause}]"
+
+            insert_line = " ".join(parts) + main + "\n"
+
+            # Prepare inspector fields
+            try:
+                if speaker:
+                    # refresh prop_speaker values
+                    self.prop_speaker['values'] = list(self.speakers.keys())
+                    self.prop_speaker.set(speaker)
+                if emotion:
+                    self.prop_emotion.set(emotion)
+                if pause:
+                    self.prop_pause.set(str(pause))
+            except Exception:
+                pass
+
+            # Insert at current cursor position or append at end, with undo separators
+            try:
+                self.script_editor.edit_separator()
+            except Exception:
+                pass
+
+            try:
+                cursor_index = self.script_editor.index(tk.INSERT)
+                line_no = cursor_index.split('.')[0]
+                # insert new line after current
+                self.script_editor.insert(f"{line_no}.end+1c", '\n' + insert_line)
+                # move cursor to the newly inserted line
+                new_index = f"{int(line_no)+1}.0"
+                self.script_editor.mark_set(tk.INSERT, new_index)
+                self.script_editor.focus_set()
+                self.update_status(f"Draft geladen: {item.get('id') or idx}")
+            except Exception:
+                # fallback: append at end
+                self.script_editor.insert(tk.END, insert_line)
+                self.script_editor.see(tk.END)
+                self.script_editor.focus_set()
+                self.update_status(f"Draft angehängt: {item.get('id') or idx}")
+
+            try:
+                self.script_editor.edit_separator()
+            except Exception:
+                pass
+
+        except Exception as e:
+            print('Draft open failed:', e)
 
         # Timeline (optional)
         self.timeline_frame = ttk.LabelFrame(parent, text="⏱️ Timeline", padding=5)
@@ -439,18 +639,24 @@ class PodcastEditor:
         self.info_duration.pack(anchor=tk.W)
 
     def setup_status_bar(self):
-        """Erstelle Status-Leiste"""
-        status_frame = ttk.Frame(self.root)
-        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        """Erstelle Status-Leiste (verwende `components.StatusBar`)."""
+        try:
+            from .components import StatusBar
 
-        self.status_label = ttk.Label(status_frame, text="Bereit", relief=tk.SUNKEN, anchor=tk.W)
-        self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self.statusbar = StatusBar(self.root)
+            self.statusbar.pack(side=tk.BOTTOM, fill=tk.X)
+        except Exception:
+            # fallback to original simplistic status frame
+            status_frame = ttk.Frame(self.root)
+            status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.progress = ttk.Progressbar(status_frame, mode="indeterminate", length=200)
-        # Initial versteckt
+            self.status_label = ttk.Label(status_frame, text="Bereit", relief=tk.SUNKEN, anchor=tk.W)
+            self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        self.cursor_pos = ttk.Label(status_frame, text="Zeile: 1, Spalte: 0", relief=tk.SUNKEN)
-        self.cursor_pos.pack(side=tk.RIGHT)
+            self.progress = ttk.Progressbar(status_frame, mode="indeterminate", length=200)
+
+            self.cursor_pos = ttk.Label(status_frame, text="Zeile: 1, Spalte: 0", relief=tk.SUNKEN)
+            self.cursor_pos.pack(side=tk.RIGHT)
 
     def setup_syntax_tags(self):
         """Konfiguriere Syntax-Highlighting Tags"""
@@ -649,7 +855,13 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
             messagebox.showerror("Fehler", f"Speichern fehlgeschlagen:\n{e}")
 
     def load_project_data(self, data: dict):
-        """Lade Projekt-Daten"""
+        """Lade Projekt-Daten
+
+        Zusätzlich zu bisherigen Feldern unterstützt diese Methode jetzt
+        optional ein `tracks`-Feld, das eine Liste von Tracks/Clips enthält.
+        Das ermöglicht Importer-Workflows (z.B. `project_manifest.json`) die
+        Timeline direkt zu befüllen.
+        """
         # Sprecher laden
         if "speakers" in data:
             self.speakers = {}
@@ -660,6 +872,54 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                     voice_sample=speaker_data.get("voice", ""),
                     description=speaker_data.get("description", ""),
                 )
+
+        # Tracks/Clips laden (optional)
+        try:
+            tracks = data.get("tracks")
+            if tracks and hasattr(self, "multitrack") and self.multitrack:
+                # Clear existing tracks and re-create defaults
+                self.multitrack.tracks = []
+                # Add named tracks from project
+                from .multitrack import TrackType, Track, AudioClip
+
+                for t in tracks:
+                    tname = t.get("name", "Imported Track")
+                    ttype_str = t.get("type", "voice").upper()
+                    try:
+                        ttype = TrackType[ttype_str]
+                    except Exception:
+                        ttype = TrackType.VOICE
+
+                    track_obj = Track(id=t.get("id", ""), name=tname, type=ttype)
+                    # Add clips
+                    for c in t.get("clips", []):
+                        try:
+                            clip = AudioClip(
+                                id=c.get("id", ""),
+                                file=Path(c.get("file")),
+                                start_time=float(c.get("start_time", 0.0)),
+                                duration=float(c.get("duration", 0.0)),
+                                volume=float(c.get("volume", 1.0)),
+                                fade_in=float(c.get("fade_in", 0.0)),
+                                fade_out=float(c.get("fade_out", 0.0)),
+                                metadata=c.get("metadata", {}),
+                            )
+                            track_obj.add_clip(clip)
+                        except Exception:
+                            # Skip malformed clips
+                            continue
+
+                    self.multitrack.tracks.append(track_obj)
+
+                # Rebuild UI for multitrack
+                try:
+                    self.multitrack._rebuild_mixer()
+                    self.multitrack._render_timeline()
+                except Exception:
+                    pass
+        except Exception:
+            # Non-fatal: keep proceeding with remaining data
+            pass
 
         self.update_speakers_list()
         self.update_info()
@@ -883,6 +1143,149 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         # Starte TTS-Generierung in Thread
         threading.Thread(target=self._generate_preview, args=(current_line,), daemon=True).start()
 
+    def _on_preview_selected_voice(self):
+        """Preview the currently selected voice from the voice list."""
+        sel = self.voice_listbox.curselection()
+        if not sel:
+            messagebox.showwarning("Keine Auswahl", "Bitte eine Stimme auswählen")
+            return
+        idx = sel[0]
+        language = self.lang_var.get()
+        style = self.style_var.get() or None
+        voices = self.voice_library.search(language=language, style=style)
+        if idx >= len(voices):
+            return
+        voice = voices[idx]
+        try:
+            # Run preview off the UI thread to avoid blocking
+            from ..voices.manager import preview_voice
+
+            def _run_preview():
+                try:
+                    preview_voice(voice.id, sample_text="Hallo, dies ist eine Vorschau der Stimme.")
+                except Exception as e:
+                    self.root.after(0, lambda: messagebox.showerror("Vorschau fehlgeschlagen", str(e)))
+
+            threading.Thread(target=_run_preview, daemon=True).start()
+        except Exception as e:
+            messagebox.showerror("Vorschau fehlgeschlagen", str(e))
+
+    def _voice_drag_start(self, event):
+        try:
+            idx = self.voice_listbox.nearest(event.y)
+            self.voice_listbox.selection_clear(0, tk.END)
+            self.voice_listbox.selection_set(idx)
+            self._dragged_voice_index = idx
+        except Exception:
+            self._dragged_voice_index = None
+
+    def _on_voice_right_click(self, event):
+        """Show context menu for voice list (Preview)."""
+        try:
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="Vorschau", command=lambda: self._on_preview_selected_voice())
+            menu.add_command(label="Als Sprecher verwenden", command=self.use_voice_as_speaker)
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _voice_drag_motion(self, event):
+        # Provide visual feedback: highlight the line under the mouse
+        try:
+            x_root = self.root.winfo_pointerx() - self.script_editor.winfo_rootx()
+            y_root = self.root.winfo_pointery() - self.script_editor.winfo_rooty()
+            index = self.script_editor.index(f"@{x_root},{y_root}")
+            line_no = index.split('.')[0]
+
+            if self._drag_highlight_line != line_no:
+                # remove previous
+                if self._drag_highlight_line is not None:
+                    try:
+                        self.script_editor.tag_remove("drag_highlight", f"{self._drag_highlight_line}.0", f"{self._drag_highlight_line}.end")
+                    except Exception:
+                        pass
+
+                # add new
+                try:
+                    self.script_editor.tag_add("drag_highlight", f"{line_no}.0", f"{line_no}.end")
+                    self._drag_highlight_line = line_no
+                except Exception:
+                    self._drag_highlight_line = None
+        except Exception:
+            pass
+
+    def _voice_drop_on_editor(self, event):
+        """Handle drop of a voice onto the editor: assign that voice as speaker for the line under cursor."""
+        if self._dragged_voice_index is None:
+            return
+        try:
+            # Determine which voice was dragged
+            idx = self._dragged_voice_index
+            language = self.lang_var.get()
+            style = self.style_var.get() or None
+            voices = self.voice_library.search(language=language, style=style)
+            if idx >= len(voices):
+                return
+            voice = voices[idx]
+
+            # Determine line index under mouse
+            x_root = self.root.winfo_pointerx() - self.script_editor.winfo_rootx()
+            y_root = self.root.winfo_pointery() - self.script_editor.winfo_rooty()
+            try:
+                index = self.script_editor.index(f"@{x_root},{y_root}")
+            except Exception:
+                index = self.script_editor.index(tk.INSERT)
+
+            line_no = index.split('.')[0]
+            # Get current line text
+            line_text = self.script_editor.get(f"{line_no}.0", f"{line_no}.end")
+
+            # Create Speaker object from voice and add to speakers list
+            try:
+                from ..voices.manager import speaker_from_voice
+
+                new_speaker = speaker_from_voice(voice.id, speaker_name=voice.display_name)
+                # insert into speakers dict keyed by name
+                self.speakers[new_speaker.name] = new_speaker
+                self.update_speakers_list()
+            except Exception as e:
+                print("Could not create speaker from voice:", e)
+
+            # Use structured prefix for the line
+            speaker_label = voice.display_name
+            if ':' in line_text and line_text.split(':', 1)[0].strip() in self.speakers:
+                parts = line_text.split(':', 1)
+                new_line = f"{speaker_label}: {parts[1].lstrip()}"
+            else:
+                new_line = f"{speaker_label}: {line_text}"
+
+            # mark undo boundary so text widget undo handles this as single action
+            try:
+                self.script_editor.edit_separator()
+            except Exception:
+                pass
+
+            # Replace line
+            self.script_editor.delete(f"{line_no}.0", f"{line_no}.end")
+            self.script_editor.insert(f"{line_no}.0", new_line)
+            self.update_status(f"Zugeordnet: {speaker_label} -> Zeile {line_no}")
+
+            # cleanup highlight
+            if self._drag_highlight_line is not None:
+                try:
+                    self.script_editor.tag_remove("drag_highlight", f"{self._drag_highlight_line}.0", f"{self._drag_highlight_line}.end")
+                except Exception:
+                    pass
+                self._drag_highlight_line = None
+
+        except Exception as e:
+            print("Drag&Drop assign failed:", e)
+        finally:
+            self._dragged_voice_index = None
+
     def _get_current_line_text(self) -> Optional[str]:
         """Hole Text der aktuellen Zeile"""
         try:
@@ -1072,6 +1475,555 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         self.audio_player.stop()
         self.audio_status.config(text="Gestoppt ⏸️", foreground=self.colors["warning"])
         self.update_status("Wiedergabe gestoppt")
+
+    def open_generate_dialog(self):
+        """Open the Generate Project dialog (skeleton)."""
+        dlg = GenerateProjectDialog(self.root)
+        self.root.wait_window(dlg.window)
+        if getattr(dlg, 'result', None):
+            cfg = dlg.result
+            # For now: just show a simple confirmation and publish an event
+            self.update_status(f"Generate requested: engine={cfg.get('engine')} workers={cfg.get('max_workers')}")
+            try:
+                eb = get_event_bus()
+                eb.publish('script.generate.request', cfg)
+            except Exception:
+                pass
+
+    def _on_generate_request(self, cfg):
+        """Event handler: start a real generation run in background."""
+        # remember last generate config (used for Retry engine selection)
+        try:
+            self._last_generate_cfg = cfg
+        except Exception:
+            self._last_generate_cfg = None
+
+        threading.Thread(target=self._run_generate, args=(cfg,), daemon=True).start()
+
+    def _run_generate(self, cfg):
+        """Perform generation: write a simple script from draft items and call orchestrator."""
+        try:
+            if not self._draft_items:
+                self.root.after(0, lambda: messagebox.showwarning('No Draft', 'Bitte zuerst Draft importieren oder erstellen.'))
+                return
+
+            # Ask user for output directory
+            out_dir = filedialog.askdirectory(title='Select output directory for generation')
+            if not out_dir:
+                return
+
+            # Create a temp script file (JSON list expected by synthesize_script_preview)
+            tmpdir = tempfile.mkdtemp(prefix='pf_script_')
+            script_path = Path(tmpdir) / 'script.json'
+            content = []
+            for u in self._draft_items:
+                content.append({'speaker': u.get('speaker') or 'narrator', 'text': u.get('text') or ''})
+            script_path.write_text(json.dumps(content, ensure_ascii=False), encoding='utf-8')
+
+
+            # Open progress modal
+            self.root.after(0, lambda: self._open_progress_modal(self._draft_items))
+            self.root.after(0, lambda: self.update_status('Starte Generierung...'))
+
+            # cooperative cancellation event (shared with UI)
+            try:
+                self._generation_cancel_event = threading.Event()
+            except Exception:
+                self._generation_cancel_event = None
+
+            res = synthesize_script_preview(
+                str(script_path),
+                out_dir,
+                engine=cfg.get('engine'),
+                max_workers=cfg.get('max_workers', 2),
+                cache_dir=str(Path(out_dir) / 'cache'),
+                cancel_event=self._generation_cancel_event,
+            )
+
+            if res.get('ok'):
+                preview = res.get('preview_path') or res.get('preview')
+                self.root.after(0, lambda: messagebox.showinfo('Fertig', f"Generierung fertig: {preview}"))
+                # attempt to play preview
+                try:
+                    self.audio_player.play(Path(preview))
+                except Exception:
+                    pass
+            else:
+                self.root.after(0, lambda: messagebox.showerror('Generierung fehlgeschlagen', res.get('message', 'unknown')))
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror('Generierung Fehler', str(e)))
+        finally:
+            try:
+                shutil.rmtree(tmpdir)
+            except Exception:
+                pass
+            # close progress modal if open
+            try:
+                self.root.after(0, lambda: self._close_progress_modal())
+            except Exception:
+                pass
+            # clear cancel event
+            try:
+                self._generation_cancel_event = None
+            except Exception:
+                pass
+
+    def _on_script_progress(self, data):
+        """Receive per-utterance progress events and update UI."""
+        try:
+            idx = data.get('idx')
+            status = data.get('status')
+            task_id = data.get('task_id')
+            progress_val = data.get('progress')
+
+            def _update():
+                # Update status bar
+                try:
+                    self.update_status(f"TTS [{idx}]: {status}")
+                except Exception:
+                    pass
+
+                # Update progress tree if present
+                try:
+                    if getattr(self, '_progress_map', None) and idx is not None:
+                        # idx may be integer-like or string; normalize
+                        try:
+                            key = int(idx)
+                        except Exception:
+                            # try to parse trailing digits
+                            try:
+                                key = int(''.join([c for c in str(idx) if c.isdigit()]))
+                            except Exception:
+                                key = None
+
+                        if key is not None and key in self._progress_map:
+                            node = self._progress_map.get(key)
+                            # map statuses to user-friendly states / tags
+                            disp = str(status)
+                            tag = 'idle'
+                            if disp in ('start', 'processing'):
+                                tag = 'processing'
+                                disp = 'processing'
+                                # record start time
+                                try:
+                                    self._progress_start_times[key] = time.time()
+                                    # set progress column to 0%
+                                    self._progress_tree.set(node, 'progress', '0%')
+                                except Exception:
+                                    pass
+                            elif disp == 'done':
+                                tag = 'done'
+                                disp = 'done'
+                                # compute duration
+                                try:
+                                    start = self._progress_start_times.get(key)
+                                    if start:
+                                        elapsed = time.time() - start
+                                        self._progress_tree.set(node, 'duration', f"{elapsed:.1f}s")
+                                    self._progress_tree.set(node, 'progress', '100%')
+                                except Exception:
+                                    pass
+                            elif disp == 'failed':
+                                tag = 'failed'
+                                disp = 'failed'
+                                try:
+                                    self._progress_tree.set(node, 'progress', '0%')
+                                except Exception:
+                                    pass
+                            elif disp == 'retrying':
+                                tag = 'retrying'
+                                try:
+                                    # append retry history note
+                                    self._progress_retry_history.setdefault(key, []).append(('retry', time.time()))
+                                    if getattr(self, '_progress_log', None):
+                                        self._progress_log.insert(tk.END, f"Retry started for idx {key}\n")
+                                        self._progress_log.see(tk.END)
+                                except Exception:
+                                    pass
+                            elif disp == 'cancelled':
+                                tag = 'cancelled'
+                                disp = 'cancelled'
+                                try:
+                                    self._progress_tree.set(node, 'progress', '0%')
+                                    self._progress_tree.set(node, 'duration', 'cancelled')
+                                    if getattr(self, '_progress_log', None):
+                                        self._progress_log.insert(tk.END, f"Utterance {key} cancelled\n")
+                                        self._progress_log.see(tk.END)
+                                except Exception:
+                                    pass
+
+                            # set the 'status' column
+                            try:
+                                self._progress_tree.set(node, 'status', disp)
+                                # set visual tag
+                                try:
+                                    self._progress_tree.item(node, tags=(tag,))
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+
+                            # remember task id for cancellation attempts
+                            try:
+                                if task_id:
+                                    if not hasattr(self, '_progress_task_ids'):
+                                        self._progress_task_ids = {}
+                                    self._progress_task_ids[key] = task_id
+                            except Exception:
+                                pass
+                            # update progressbar if we have a numeric progress value
+                            try:
+                                if progress_val is not None:
+                                    try:
+                                        p = float(progress_val)
+                                    except Exception:
+                                        p = None
+                                    if p is not None:
+                                        # tree cell text
+                                        try:
+                                            self._progress_tree.set(node, 'progress', f"{int(p*100)}%")
+                                        except Exception:
+                                            pass
+                                        # progressbar widget
+                                        try:
+                                            pb = getattr(self, '_progress_bars', {}).get(key)
+                                            if pb:
+                                                pb['value'] = max(0, min(100, int(p*100)))
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            self.root.after(0, _update)
+        except Exception:
+            pass
+
+    def _on_script_preview_ready(self, data):
+        """When the orchestrator publishes preview_ready, play and show waveform."""
+        try:
+            preview = data.get('preview') or data.get('preview_path')
+            if not preview:
+                return
+            p = Path(preview)
+            self.root.after(0, lambda: self.update_status(f"Preview ready: {p.name}"))
+            try:
+                self.audio_player.play(p)
+            except Exception:
+                pass
+            try:
+                self._update_waveform(p)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # ========== Progress Modal for Generation ==========
+    def _open_progress_modal(self, draft_items):
+        try:
+            if getattr(self, '_progress_win', None) and tk.Toplevel.winfo_exists(self._progress_win):
+                return
+        except Exception:
+            pass
+
+        self._progress_win = tk.Toplevel(self.root)
+        self._progress_win.title('Generation Progress')
+        self._progress_win.geometry('640x360')
+        self._progress_win.transient(self.root)
+        self._progress_win.grab_set()
+
+        frame = ttk.Frame(self._progress_win, padding=8)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        cols = ('idx', 'speaker', 'text', 'progress', 'duration', 'status')
+        self._progress_tree = ttk.Treeview(frame, columns=cols, show='headings', height=10)
+        for c in cols:
+            self._progress_tree.heading(c, text=c.capitalize())
+            if c == 'text':
+                width = 240
+            elif c == 'status':
+                width = 100
+            elif c in ('progress', 'duration'):
+                width = 90
+            else:
+                width = 50
+            self._progress_tree.column(c, width=width)
+        self._progress_tree.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
+
+        # Configure visual tags for status coloring
+        try:
+            self._progress_tree.tag_configure('idle', background='white')
+            self._progress_tree.tag_configure('processing', background='#fff2cc')
+            self._progress_tree.tag_configure('done', background='#d4ffd4')
+            self._progress_tree.tag_configure('failed', background='#ffd4d4')
+            self._progress_tree.tag_configure('retrying', background='#d0e0ff')
+            self._progress_tree.tag_configure('cancelled', background='#e0e0e0')
+        except Exception:
+            pass
+
+        # populate
+        self._progress_map = {}
+        for i, it in enumerate(draft_items, start=1):
+            idx = it.get('id') or f"i{i}"
+            speaker = it.get('speaker') or 'narrator'
+            text = (it.get('text') or '')[:120]
+            node = self._progress_tree.insert('', tk.END, values=(i, speaker, text, '0%', '', 'idle'), tags=('idle',))
+            self._progress_map[i] = node
+
+        # create per-row progressbars (overlayed on Treeview)
+        self._progress_bars = {}
+        for key, node in self._progress_map.items():
+            try:
+                pb = ttk.Progressbar(self._progress_tree, orient=tk.HORIZONTAL, mode='determinate')
+                # default 0-100
+                pb['maximum'] = 100
+                pb['value'] = 0
+                self._progress_bars[key] = pb
+            except Exception:
+                self._progress_bars[key] = None
+
+        # Position bars initially and on widget changes
+        def _position_bars(event=None):
+            try:
+                for k, node in self._progress_map.items():
+                    pb = self._progress_bars.get(k)
+                    if not pb:
+                        continue
+                    try:
+                        bbox = self._progress_tree.bbox(node, 'progress')
+                        if not bbox:
+                            # hide offscreen
+                            pb.place_forget()
+                            continue
+                        x, y, w, h = bbox
+                        # small padding
+                        px = x + 4
+                        py = y + 2
+                        pw = max(40, w - 8)
+                        ph = max(12, h - 4)
+                        pb.place(x=px, y=py, width=pw, height=ph)
+                    except Exception:
+                        try:
+                            pb.place_forget()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # bind repositioning
+        try:
+            self._progress_tree.bind('<Configure>', _position_bars)
+            self._progress_tree.bind('<Expose>', _position_bars)
+            # mouse wheel / scroll - reposition after scroll events
+            self._progress_tree.bind('<MouseWheel>', _position_bars)
+            self._progress_tree.bind('<Button-4>', _position_bars)
+            self._progress_tree.bind('<Button-5>', _position_bars)
+        except Exception:
+            pass
+
+        # ensure initial placement
+        try:
+            self.root.after(100, _position_bars)
+        except Exception:
+            pass
+
+        # Attach a vertical scrollbar and hook its commands to reposition bars robustly
+        try:
+            vscroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=lambda *a: (self._progress_tree.yview(*a), self.root.after(0, _position_bars)))
+            vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+            # ensure treeview updates scrollbar and repositions bars on scroll
+            self._progress_tree.configure(yscrollcommand=lambda *a: (vscroll.set(*a), self.root.after(0, _position_bars)))
+        except Exception:
+            pass
+
+        # map of idx -> task_id for cancellation
+        self._progress_task_ids = {}
+        # start times for duration calculation
+        self._progress_start_times = {}
+        # retry history per idx
+        self._progress_retry_history = {}
+
+        # Log area
+        self._progress_log = scrolledtext.ScrolledText(frame, height=6, state=tk.NORMAL)
+        self._progress_log.pack(fill=tk.BOTH, expand=False, side=tk.BOTTOM, pady=(6, 0))
+        try:
+            self._progress_log.insert(tk.END, 'Generation log:\n')
+        except Exception:
+            pass
+
+        btns = ttk.Frame(frame)
+        btns.pack(fill=tk.X, side=tk.BOTTOM, pady=6)
+
+        ttk.Button(btns, text='Retry Selected', command=self._retry_selected).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(btns, text='Cancel', command=self._cancel_generation).pack(side=tk.RIGHT, padx=4)
+
+        self._generation_cancelled = False
+
+    def _close_progress_modal(self):
+        try:
+            if getattr(self, '_progress_win', None):
+                try:
+                    self._progress_win.grab_release()
+                except Exception:
+                    pass
+                try:
+                    self._progress_win.destroy()
+                except Exception:
+                    pass
+                self._progress_win = None
+        except Exception:
+            pass
+
+    def _cancel_generation(self):
+        self._generation_cancelled = True
+        # set cooperative cancel event if present
+        try:
+            if hasattr(self, '_generation_cancel_event') and self._generation_cancel_event is not None:
+                try:
+                    self._generation_cancel_event.set()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Attempt to cancel running/pending synth tasks via ThreadManager
+        try:
+            tm = get_thread_manager()
+            if hasattr(self, '_progress_task_ids'):
+                for idx, tid in list(self._progress_task_ids.items()):
+                    try:
+                        cancelled = tm.cancel_task(tid)
+                        if cancelled:
+                            # update UI row
+                            try:
+                                node = self._progress_map.get(idx)
+                                if node:
+                                    self._progress_tree.set(node, 'status', 'cancelled')
+                                    self._progress_tree.item(node, tags=('cancelled',))
+                                    # log cancellation
+                                    try:
+                                        if getattr(self, '_progress_log', None):
+                                            self._progress_log.insert(tk.END, f"Task {tid} cancelled (idx {idx})\n")
+                                            self._progress_log.see(tk.END)
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        self.update_status('Generation cancelled')
+
+    def _retry_selected(self):
+        sel = self._progress_tree.selection()
+        if not sel:
+            messagebox.showinfo('Retry', 'Bitte eine Utterance auswählen')
+            return
+        item = sel[0]
+        vals = self._progress_tree.item(item, 'values')
+        try:
+            idx = int(vals[0])
+        except Exception:
+            messagebox.showerror('Retry', 'Konnte Index nicht bestimmen')
+            return
+
+        # Build a single-entry script for retry
+        try:
+            di = None
+            if idx-1 < len(self._draft_items):
+                di = self._draft_items[idx-1]
+            if di is None:
+                messagebox.showerror('Retry', 'Utterance nicht gefunden')
+                return
+
+            tmpdir = tempfile.mkdtemp(prefix='pf_retry_')
+            script_path = Path(tmpdir) / 'script.json'
+            content = [{'speaker': di.get('speaker') or 'narrator', 'text': di.get('text') or ''}]
+            script_path.write_text(json.dumps(content, ensure_ascii=False), encoding='utf-8')
+
+            out_dir = filedialog.askdirectory(title='Select output directory for retry')
+            if not out_dir:
+                shutil.rmtree(tmpdir)
+                return
+
+            # run synthesize for single utterance in a background thread
+            def _retry_thread():
+                try:
+                    self.root.after(0, lambda: self._progress_tree.set(self._progress_map[idx], 'status', 'retrying'))
+                    # choose engine from last generate config if available
+                    engine_choice = 'PIPER'
+                    try:
+                        engine_choice = (self._last_generate_cfg.get('engine') if getattr(self, '_last_generate_cfg', None) else 'PIPER') or 'PIPER'
+                    except Exception:
+                        engine_choice = 'PIPER'
+                    # log retry
+                    try:
+                        if getattr(self, '_progress_log', None):
+                            self._progress_log.insert(tk.END, f"Retry idx {idx} using engine {engine_choice}\n")
+                            self._progress_log.see(tk.END)
+                    except Exception:
+                        pass
+
+                    res = synthesize_script_preview(str(script_path), out_dir, engine=engine_choice, max_workers=1, cache_dir=str(Path(out_dir)/'cache'))
+                    if res.get('ok'):
+                        self.root.after(0, lambda: self._progress_tree.set(self._progress_map[idx], 'status', 'done'))
+                        message = 'Retry successful'
+                        self.root.after(0, lambda: self.update_status(message))
+                    else:
+                        self.root.after(0, lambda: self._progress_tree.set(self._progress_map[idx], 'status', 'failed'))
+                finally:
+                    try:
+                        shutil.rmtree(tmpdir)
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_retry_thread, daemon=True).start()
+
+        except Exception as e:
+            messagebox.showerror('Retry failed', str(e))
+
+
+class GenerateProjectDialog:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Generate Project")
+        self.window.geometry("420x220")
+        self.result = None
+
+        frame = ttk.Frame(self.window, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text="Engine:").grid(row=0, column=0, sticky=tk.W, pady=6)
+        self.engine_var = tk.StringVar(value="PIPER")
+        ttk.Combobox(frame, textvariable=self.engine_var, values=["PIPER", "BARK", "XTTS"], width=16).grid(row=0, column=1, sticky=tk.W)
+
+        ttk.Label(frame, text="Max Workers:").grid(row=1, column=0, sticky=tk.W, pady=6)
+        self.workers_var = tk.IntVar(value=2)
+        ttk.Spinbox(frame, from_=1, to=16, textvariable=self.workers_var, width=6).grid(row=1, column=1, sticky=tk.W)
+
+        ttk.Label(frame, text="Mix Policy:").grid(row=2, column=0, sticky=tk.W, pady=6)
+        self.mix_var = tk.StringVar(value="concat")
+        ttk.Combobox(frame, textvariable=self.mix_var, values=["concat", "crossfade", "ducking"], width=16).grid(row=2, column=1, sticky=tk.W)
+
+        self.dry_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Dry Run (no heavy deps)", variable=self.dry_var).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=6)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=4, column=0, columnspan=2, sticky=tk.E, pady=8)
+        ttk.Button(btn_frame, text="Start", command=self._on_start).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(btn_frame, text="Cancel", command=self.window.destroy).pack(side=tk.RIGHT)
+
+    def _on_start(self):
+        self.result = {
+            'engine': self.engine_var.get(),
+            'max_workers': int(self.workers_var.get()),
+            'mix_policy': self.mix_var.get(),
+            'dry_run': bool(self.dry_var.get()),
+        }
+        self.window.destroy()
 
     def apply_properties(self):
         """Wende Eigenschaften auf aktuelle Zeile an"""

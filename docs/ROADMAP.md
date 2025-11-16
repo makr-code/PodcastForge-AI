@@ -249,6 +249,15 @@ class TTSEngineManager:
         self.engine_usage[engine_key] = 1
         
         return engine
+
+    # Alternative: Context-Manager Nutzung (empfohlen)
+    # Statt manuellem get_engine()/unload-Allokationen kann der Manager
+    # auch als Context-Manager verwendet werden, um Engines referenzzählt
+    # zu halten und automatisch zu releasen:
+    #
+    # mgr = get_engine_manager(max_engines=2)
+    # with mgr.use_engine(TTSEngine.PIPER, config={"model": "default"}) as engine:
+    #     audio = engine.synthesize("preview", speaker="0")
     
     def _create_engine(self, 
                        engine_type: TTSEngine, 

@@ -425,6 +425,80 @@ class VoiceLibrary:
         console.print(table)
         console.print(f"\n[bold]Total: {len(voices)} voices[/bold]")
 
+    def save_to_yaml(self, path: str):
+        """Speichere die aktuelle Bibliothek als YAML (vereinfachtes Schema)."""
+        try:
+            import yaml
+
+            data = []
+            for v in self.all_voices:
+                data.append(
+                    {
+                        'id': v.id,
+                        'name': v.name,
+                        'display_name': v.display_name,
+                        'language': v.language,
+                        'gender': v.gender.value,
+                        'age': v.age.value,
+                        'style': v.style.value,
+                        'description': v.description,
+                        'repo': v.repo,
+                        'sub_path': v.sub_path,
+                        'sample_filename': v.sample_filename,
+                        'engine': v.engine,
+                        'samplerate': v.samplerate,
+                        'tags': v.tags,
+                    }
+                )
+
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(yaml.safe_dump(data, sort_keys=False), encoding='utf-8')
+            return True
+        except Exception:
+            return False
+
+    def load_from_yaml(self, path: str):
+        """Lade Stimmen aus einer YAML-Datei und ersetze die Bibliothek.
+
+        Rückgabe: True wenn erfolgreich, False sonst.
+        """
+        try:
+            import yaml
+
+            p = Path(path)
+            if not p.exists():
+                return False
+            raw = yaml.safe_load(p.read_text(encoding='utf-8'))
+            voices = []
+            for item in raw:
+                try:
+                    voice = VoiceProfile(
+                        id=item.get('id'),
+                        name=item.get('name'),
+                        display_name=item.get('display_name') or item.get('name'),
+                        language=item.get('language', 'de'),
+                        gender=VoiceGender(item.get('gender', 'male')),
+                        age=VoiceAge(item.get('age', 'adult')),
+                        style=VoiceStyle(item.get('style', 'professional')),
+                        description=item.get('description', ''),
+                        repo=item.get('repo', 'drewThomasson/fineTunedTTSModels'),
+                        sub_path=item.get('sub_path', ''),
+                        sample_filename=item.get('sample_filename', ''),
+                        engine=item.get('engine', 'xtts'),
+                        samplerate=item.get('samplerate', 24000),
+                        tags=item.get('tags', []) or [],
+                    )
+                    voices.append(voice)
+                except Exception:
+                    continue
+
+            self.all_voices = voices
+            self._index_voices()
+            return True
+        except Exception:
+            return False
+
 
 # Globale Instanz
 _voice_library = None

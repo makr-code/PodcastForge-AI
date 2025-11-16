@@ -94,6 +94,13 @@ pytest tests/test_forge.py
 - Docstrings im Google-Style
 - Beispiele in `/examples`
 - Guides in `/docs/guides`
+ - **Dokumentationspflicht & PR-Template:** Bitte nutze `docs/todo.md` als Leitfaden für Dokumentationspflichten und die PR-Dokumentationsvorlage.
+ - **Copilot / Assistenz-Richtlinie:** Automatisierte Assistenten (z. B. GitHub Copilot) sollten sich an die Vorgaben in `./.github/indroduction` halten. Änderungen, die automatisch vorgeschlagen wurden, müssen in der PR-Beschreibung klar ausgewiesen werden.
+
+## Pull Request Hinweise
+
+- Nutze die in `docs/todo.md` beschriebene PR-Template (Kurzbeschreibung, Motivation, Tests, Dokumentation, Migrationshinweise).
+- Wenn Änderungen CLI-Flags, API-Signaturen oder Konfigurationsoptionen betreffen, dokumentiere die Änderungen in `docs/guides/` und aktualisiere `README.md` falls nötig.
 
 ## Fragen?
 

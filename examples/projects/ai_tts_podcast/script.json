@@ -1,0 +1,14 @@
+[
+  {"speaker": "Host", "text": "Willkommen zur ersten Episode unseres Deep-Dive Podcasts über Künstliche Intelligenz und Text-to-Speech."},
+  {"speaker": "Host", "text": "Heute sprechen wir mit ExpertInnen über die Grundlagen, Anwendungen und Herausforderungen moderner TTS-Systeme."},
+  {"speaker": "Expert", "text": "Vielen Dank für die Einladung. Ich freue mich, über die aktuellen Fortschritte in neuronalen Sprachmodellen zu sprechen."},
+  {"speaker": "Expert", "text": "Moderne TTS-Systeme nutzen oft neuronale Netzwerke, die auf riesigen Sprachkorpora trainiert werden. Das erlaubt natürlichere und emotionalere Stimmen."},
+  {"speaker": "Host", "text": "Welche Rolle spielt Voice Cloning und wie kann man das verantwortungsvoll einsetzen?"},
+  {"speaker": "Expert", "text": "Voice Cloning kann sehr nützlich sein, etwa bei der Lokalisierung von Inhalten. Gleichzeitig sind Zustimmung und Schutz der Personenstimmen kritisch."},
+  {"speaker": "Guest", "text": "Ich habe kürzlich ein Projekt gemacht, bei dem wir TTS nutzten, um Hörbücher vorzulesen — die Qualität war beeindruckend."},
+  {"speaker": "Guest", "text": "Aber es gab auch Herausforderungen: Intonation, Pausen und natürliches Sprechen müssen sorgfältig abgestimmt werden."},
+  {"speaker": "Host", "text": "Welche praktischen Tipps würdet ihr Forschern oder Produzenten geben, die TTS einsetzen möchten?"},
+  {"speaker": "Expert", "text": "Start small, nutze hochwertige Trainingsdaten oder geprüfte Voice-Presets, und teste auf Diversität und Bias."},
+  {"speaker": "Host", "text": "Danke — zum Abschluss, was sind spannende Trends, auf die wir achten sollten?"},
+  {"speaker": "Expert", "text": "Sprecher-Adaptation in Echtzeit, multimodale Modelle und effizientere, datensparsame Trainingsmethoden sind spannend."}
+]

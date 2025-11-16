@@ -137,6 +137,21 @@ else
     if [[ $REPLY =~ ^[JjYy]$ ]]; then
         git clone https://github.com/DrewThomasson/ebook2audiobook.git
         success "ebook2audiobook geklont"
+
+        # Optional: copy selected parts into project integration folder
+        if [ -x "scripts/import_ebook2audiobook.sh" ]; then
+            echo "Möchtest du die `lib`-Module in das Integrations-Verzeichnis kopieren? (j/n) "
+            read -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[JjYy]$ ]]; then
+                bash scripts/import_ebook2audiobook.sh
+                success "ebook2audiobook lib kopiert"
+            else
+                echo "Verwende runtime wrapper (keine Kopie erstellt)."
+            fi
+        else
+            warning "Import-Skript scripts/import_ebook2audiobook.sh nicht gefunden or not executable"
+        fi
     fi
 fi
 

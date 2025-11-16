@@ -100,7 +100,10 @@ from podcastforge.tts.engine_manager import get_engine_manager, TTSEngine
 manager = get_engine_manager(max_engines=2)
 
 # Lade Engine (automatisch)
-engine = manager.get_engine(TTSEngine.BARK)
+# Empfohlene, thread-safe Nutzung mit Context-Manager:
+with manager.use_engine(TTSEngine.BARK, config={"model": "default"}) as engine:
+    # engine ist geladen und kann direkt verwendet werden
+    audio = engine.synthesize("Hello [laughter] world!", speaker="v2/en_speaker_6")
 
 # Synthese
 audio, sample_rate = manager.synthesize(
@@ -115,6 +118,22 @@ stats = manager.get_stats()
 print(f"Loaded engines: {stats['loaded_engines']}")
 print(f"Total memory: {stats['total_memory']:.2f} GB")
 ```
+
+Hinweis: Für deterministisches Ressourcen-Management und sichere Parallelnutzung bevorzugen wir jetzt
+den Context-Manager `use_engine()`, der die Engine referenzzählt und nach dem Verlassen des Kontexts
+automatisch freigibt. Beispiel:
+
+```python
+from podcastforge.tts.engine_manager import get_engine_manager, TTSEngine
+
+manager = get_engine_manager(max_engines=2)
+with manager.use_engine(TTSEngine.PIPER, config={"model": "default"}) as engine:
+    audio = engine.synthesize("Quick preview", speaker="0")
+# nach dem with-Block wird die Engine freigegeben (Release/Unload falls Refcount 0)
+```
+
+Die klassische `get_engine()`-API bleibt erhalten (Cache-Hit, manuelles Unload), aber `use_engine`
+ist die empfohlene Variante für kurzlebige, deterministische Nutzung.
 
 ### BARK Engine - Emotionen
 
@@ -135,8 +154,8 @@ audio = engine.synthesize(text, speaker="v2/en_speaker_6")
 
 ```python
 # Piper ist perfekt für schnelle TTS-Previews (CPU, Real-time)
-engine = manager.get_engine(TTSEngine.PIPER)
-audio = engine.synthesize("Quick preview", speaker="0")
+with manager.use_engine(TTSEngine.PIPER, config={"model": "default"}) as engine:
+    audio = engine.synthesize("Quick preview", speaker="0")
 ```
 
 ### Design Patterns
@@ -408,9 +427,11 @@ def on_completed(task_id, result):
 ### Engine-Management
 
 ```python
-# ✅ RICHTIG: Engine-Caching nutzen
+# ✅ RICHTIG: Engine-Caching nutzen (empfohlen via Context-Manager)
 manager = get_engine_manager(max_engines=2)
-engine = manager.get_engine(TTSEngine.BARK)  # Cache-Hit beim 2. Mal
+with manager.use_engine(TTSEngine.BARK, config={"model": "default"}) as engine:
+    # innerer Block: Engine ist geladen und referenziert (Cache-Hit beim 2. Zugriff)
+    pass
 
 # ❌ FALSCH: Jedes Mal neue Engine erstellen
 engine = BarkEngine()

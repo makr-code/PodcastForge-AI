@@ -3,17 +3,12 @@ TTS (Text-to-Speech) Module
 Multi-Engine TTS System mit Factory Pattern
 """
 
-from .adapter import ebook2audiobookAdapter
-from .engine_manager import (
-    BaseTTSEngine,
-    TTSEngine,
-    TTSEngineFactory,
-    TTSEngineManager,
-    get_engine_manager,
-)
+# Lightweight package init: avoid importing adapters or engine implementations
+# at import time to keep tests and light imports fast. Import submodules
+# directly when needed, e.g.:
+# `from podcastforge.tts.engine_manager import TTSEngineManager`
 
 __all__ = [
-    "ebook2audiobookAdapter",
     "TTSEngineManager",
     "get_engine_manager",
     "TTSEngine",

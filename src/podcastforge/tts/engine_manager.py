@@ -5,6 +5,7 @@ Modulares Multi-Engine TTS-System mit Factory Pattern und LRU-Caching
 """
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from enum import Enum
@@ -13,8 +14,30 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+import threading
+import contextlib
+import hashlib
 
 logger = logging.getLogger(__name__)
+
+
+def _get_models_dir() -> Path:
+    """Lokaler Models-Ordner (offline-first).
+
+    Prüft die Umgebungsvariable `PF_MODELS_DIR`, ansonsten `./models` im Projektroot.
+    Gibt ein Path-Objekt zurück (existiert möglicherweise noch nicht).
+    """
+    env = os.getenv("PF_MODELS_DIR")
+    if env:
+        return Path(env)
+    # Default to repository-relative models folder
+    repo_root = Path(__file__).resolve().parents[3]
+    return repo_root / "models"
+
+
+class CancelledError(Exception):
+    """Raised when a synth operation was cancelled cooperatively."""
+    pass
 
 
 class TTSEngine(Enum):
@@ -92,6 +115,23 @@ class BaseTTSEngine(ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(device={self.device}, loaded={self.is_loaded})"
 
+    # Context manager support to simplify safe load/unload usage
+    def __enter__(self):
+        if not self.is_loaded:
+            try:
+                self.load_model()
+            except Exception:
+                # propagate to caller
+                raise
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            self.unload()
+        except Exception:
+            # Do not suppress original exceptions
+            pass
+
 
 class XTTSEngine(BaseTTSEngine):
     """
@@ -109,8 +149,17 @@ class XTTSEngine(BaseTTSEngine):
             from TTS.api import TTS
 
             logger.info("Loading XTTS model...")
+            # Prefer local copy if present (offline-first)
+            models_dir = _get_models_dir()
+            local_model = models_dir / "tts_models_multilingual_multi-dataset_xtts_v2"
+            if local_model.exists():
+                logger.info(f"Found local XTTS model at {local_model}, loading offline")
+                model_name = str(local_model)
+            else:
+                model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
+
             self.model = TTS(
-                model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+                model_name=model_name,
                 gpu=(self.device == "cuda"),
             )
             self.sample_rate = 24000
@@ -133,7 +182,21 @@ class XTTSEngine(BaseTTSEngine):
         if not self.is_loaded:
             raise RuntimeError("Model not loaded")
 
+        cancel_event = kwargs.get('cancel_event')
+        progress_cb = kwargs.get('progress_callback')
+
         try:
+            # cooperative cancel: check before starting
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("XTTS synthesis cancelled before start")
+
+            # best-effort progress callback: started
+            if progress_cb:
+                try:
+                    progress_cb(0.0, 'start')
+                except Exception:
+                    pass
+
             # Check if speaker is file path (voice cloning)
             speaker_path = Path(speaker)
             if speaker_path.exists():
@@ -141,6 +204,21 @@ class XTTSEngine(BaseTTSEngine):
             else:
                 # Use built-in speaker
                 audio = self.model.tts(text=text, speaker=speaker, language=language)
+
+            # cooperative cancel: check after generation
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("XTTS synthesis cancelled after generation")
+
+            # best-effort progress callback: processing / done
+            if progress_cb:
+                try:
+                    progress_cb(0.7, 'processing')
+                except Exception:
+                    pass
+                try:
+                    progress_cb(1.0, 'done')
+                except Exception:
+                    pass
 
             return np.array(audio, dtype=np.float32)
 
@@ -178,12 +256,74 @@ class BarkEngine(BaseTTSEngine):
             from bark import SAMPLE_RATE, generate_audio, preload_models
 
             logger.info("Loading BARK model...")
-            preload_models(
-                device=self.device,
-                text_use_gpu=(self.device == "cuda"),
-                coarse_use_gpu=(self.device == "cuda"),
-                fine_use_gpu=(self.device == "cuda"),
-            )
+            # If a local models directory exists, point HF cache-related envs
+            # there so bark/huggingface loads models from disk (offline-first).
+            models_dir = _get_models_dir()
+            if models_dir.exists():
+                logger.info(f"Using local models dir for Bark/HF cache: {models_dir}")
+                os.environ.setdefault("HF_HOME", str(models_dir))
+                os.environ.setdefault("TRANSFORMERS_CACHE", str(models_dir))
+                os.environ.setdefault("TORCH_HOME", str(models_dir))
+
+            # Attempt to preload models. Different bark versions accept
+            # different `preload_models` signatures. We'll try the newer
+            # signature first and fall back to the no-arg version. During
+            # the load we temporarily allow the numpy scalar global for
+            # torch.serialization and monkeypatch `torch.load` to pass
+            # `weights_only=False` so legacy checkpoints can be restored.
+            try:
+                import numpy.core.multiarray as _multiarray
+                _scalar = getattr(_multiarray, "scalar", None)
+            except Exception:
+                _scalar = None
+
+            def _do_preload():
+                orig_load = torch.load
+
+                def _wrapped_load(f, *a, **k):
+                    if "weights_only" not in k:
+                        k["weights_only"] = False
+                    return orig_load(f, *a, **k)
+
+                try:
+                    torch.load = _wrapped_load
+
+                    ser = getattr(torch, "serialization", None)
+                    if _scalar is not None and ser is not None and hasattr(ser, "safe_globals"):
+                        with ser.safe_globals([_scalar]):
+                            try:
+                                preload_models(
+                                    device=self.device,
+                                    text_use_gpu=(self.device == "cuda"),
+                                    coarse_use_gpu=(self.device == "cuda"),
+                                    fine_use_gpu=(self.device == "cuda"),
+                                )
+                                return
+                            except TypeError:
+                                # fallback to no-arg
+                                preload_models()
+                                return
+
+                    # If we reach here either scalar/ser not available or
+                    # safe_globals not present — try with device args and
+                    # fallback to no-arg, all while torch.load is patched.
+                    try:
+                        preload_models(
+                            device=self.device,
+                            text_use_gpu=(self.device == "cuda"),
+                            coarse_use_gpu=(self.device == "cuda"),
+                            fine_use_gpu=(self.device == "cuda"),
+                        )
+                    except TypeError:
+                        preload_models()
+
+                finally:
+                    try:
+                        torch.load = orig_load
+                    except Exception:
+                        pass
+
+            _do_preload()
 
             self.generate = generate_audio
             self.sample_rate = SAMPLE_RATE
@@ -211,7 +351,21 @@ class BarkEngine(BaseTTSEngine):
         if not self.is_loaded:
             raise RuntimeError("Model not loaded")
 
+        cancel_event = kwargs.get('cancel_event')
+        progress_cb = kwargs.get('progress_callback')
+
         try:
+            # cooperative cancel before start
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("BARK synthesis cancelled before start")
+
+            # best-effort progress callback: started
+            if progress_cb:
+                try:
+                    progress_cb(0.0, 'start')
+                except Exception:
+                    pass
+
             audio = self.generate(
                 text,
                 history_prompt=speaker,
@@ -219,6 +373,18 @@ class BarkEngine(BaseTTSEngine):
                 waveform_temp=kwargs.get("waveform_temp", 0.7),
                 output_full=False,
             )
+
+            # cooperative cancel after generation
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("BARK synthesis cancelled after generation")
+
+            # best-effort progress callbacks
+            if progress_cb:
+                try:
+                    progress_cb(0.9, 'processing')
+                    progress_cb(1.0, 'done')
+                except Exception:
+                    pass
 
             return audio.astype(np.float32)
 
@@ -255,8 +421,17 @@ class PiperEngine(BaseTTSEngine):
 
             model_path = self.config.get("model_path", "de_DE-thorsten-high")
 
-            logger.info(f"Loading Piper model: {model_path}")
-            self.model = PiperVoice.load(model_path)
+            # Check for local copy in models dir
+            models_dir = _get_models_dir()
+            local_candidate = models_dir / model_path
+            if local_candidate.exists():
+                logger.info(f"Loading local Piper model from {local_candidate}")
+                load_target = str(local_candidate)
+            else:
+                logger.info(f"Loading Piper model: {model_path}")
+                load_target = model_path
+
+            self.model = PiperVoice.load(load_target)
             self.sample_rate = 22050
             self.is_loaded = True
             logger.info("Piper loaded (CPU)")
@@ -276,8 +451,34 @@ class PiperEngine(BaseTTSEngine):
         if not self.is_loaded:
             raise RuntimeError("Model not loaded")
 
+        cancel_event = kwargs.get('cancel_event')
+        progress_cb = kwargs.get('progress_callback')
+
         try:
+            # cooperative cancel before start
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("Piper synthesis cancelled before start")
+
+            # best-effort progress callback: started
+            if progress_cb:
+                try:
+                    progress_cb(0.0, 'start')
+                except Exception:
+                    pass
+
             audio = self.model.synthesize(text, speaker_id=int(speaker) if speaker.isdigit() else 0)
+
+            # cooperative cancel after generation
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise CancelledError("Piper synthesis cancelled after generation")
+
+            # best-effort progress callbacks
+            if progress_cb:
+                try:
+                    progress_cb(0.9, 'processing')
+                    progress_cb(1.0, 'done')
+                except Exception:
+                    pass
 
             # Piper returns List[int16], convert to float32
             audio_array = np.array(audio, dtype=np.int16)
@@ -409,7 +610,11 @@ class TTSEngineManager:
         self.max_engines = max_engines
         self.loaded_engines: OrderedDict[str, BaseTTSEngine] = OrderedDict()
         self.engine_usage: Dict[str, int] = {}
+        # Reference counts for acquired engines (for deterministic release)
+        self._ref_counts: Dict[str, int] = {}
         self.default_engine = TTSEngine.PIPER  # Schnell für Previews
+        # Lock to protect cache operations and make manager thread-safe
+        self._lock = threading.RLock()
 
         logger.info(f"TTSEngineManager initialized (max_engines={max_engines})")
 
@@ -430,34 +635,27 @@ class TTSEngineManager:
         config = config or {}
         engine_key = self._make_key(engine_type, config)
 
-        # Cache-Hit
-        if engine_key in self.loaded_engines:
-            # Move to end (LRU)
-            self.loaded_engines.move_to_end(engine_key)
-            self.engine_usage[engine_key] += 1
-            logger.debug(f"Engine cache hit: {engine_key}")
-            return self.loaded_engines[engine_key]
+        # First quick check under lock for cache hit
+        with self._lock:
+            if engine_key in self.loaded_engines:
+                # Move to end (LRU)
+                self.loaded_engines.move_to_end(engine_key)
+                self.engine_usage[engine_key] = self.engine_usage.get(engine_key, 0) + 1
+                self._ref_counts[engine_key] = self._ref_counts.get(engine_key, 0) + 1
+                logger.debug(f"Engine cache hit: {engine_key}")
+                return self.loaded_engines[engine_key]
 
-        # Cache-Miss
-        if not auto_load:
-            raise KeyError(f"Engine not loaded: {engine_key}")
+            if not auto_load:
+                raise KeyError(f"Engine not loaded: {engine_key}")
 
-        # Memory-Management: Evict LRU if needed
-        if len(self.loaded_engines) >= self.max_engines:
-            self._evict_lru()
-
-        # Create and load engine
+            # Evict LRU if needed (do under lock)
+            if len(self.loaded_engines) >= self.max_engines:
+                self._evict_lru()
+        # Create and load engine outside lock (avoid blocking other threads)
         engine = TTSEngineFactory.create(engine_type, config)
 
         try:
             engine.load_model()
-            self.loaded_engines[engine_key] = engine
-            self.engine_usage[engine_key] = 1
-            logger.info(
-                f"Engine loaded: {engine_key} ({engine.get_memory_usage() / 1024**3:.2f} GB)"
-            )
-            return engine
-
         except Exception as e:
             logger.error(f"Failed to load engine {engine_key}: {e}")
 
@@ -468,23 +666,103 @@ class TTSEngineManager:
 
             raise
 
+        # Insert into cache under lock, but double-check in case another thread
+        # loaded the same engine in the meantime
+        with self._lock:
+            if engine_key in self.loaded_engines:
+                # Another thread already loaded it; discard our instance
+                try:
+                    engine.unload()
+                except Exception:
+                    pass
+                self.loaded_engines.move_to_end(engine_key)
+                self.engine_usage[engine_key] = self.engine_usage.get(engine_key, 0) + 1
+                return self.loaded_engines[engine_key]
+
+            self.loaded_engines[engine_key] = engine
+            self.engine_usage[engine_key] = self.engine_usage.get(engine_key, 0) + 1
+            self._ref_counts[engine_key] = self._ref_counts.get(engine_key, 0) + 1
+            logger.info(
+                f"Engine loaded: {engine_key} ({engine.get_memory_usage() / 1024**3:.2f} GB)"
+            )
+            return engine
+
     def _make_key(self, engine_type: TTSEngine, config: Dict) -> str:
         """Erstelle Cache-Key"""
-        model = config.get("model", "default")
-        return f"{engine_type.value}:{model}"
+        # Create a stable key from engine type and relevant config items.
+        # We hash sorted config items to keep the key compact.
+        if not config:
+            return f"{engine_type.value}:default"
+
+        try:
+            items = tuple(sorted((k, str(v)) for k, v in config.items()))
+            digest = hashlib.sha1(str(items).encode()).hexdigest()[:8]
+            return f"{engine_type.value}:{digest}"
+        except Exception:
+            # Fallback
+            return f"{engine_type.value}:default"
 
     def _evict_lru(self):
         """Entferne Least Recently Used Engine"""
-        if not self.loaded_engines:
-            return
+        with self._lock:
+            if not self.loaded_engines:
+                return
 
-        # Get LRU (first item in OrderedDict)
-        lru_key, lru_engine = self.loaded_engines.popitem(last=False)
+            # Get LRU (first item in OrderedDict)
+            lru_key, lru_engine = self.loaded_engines.popitem(last=False)
 
-        logger.info(f"Evicting LRU engine: {lru_key}")
-        lru_engine.unload()
+            logger.info(f"Evicting LRU engine: {lru_key}")
+            try:
+                lru_engine.unload()
+            except Exception as e:
+                logger.warning(f"Error while unloading engine {lru_key}: {e}")
 
-        del self.engine_usage[lru_key]
+            if lru_key in self.engine_usage:
+                del self.engine_usage[lru_key]
+
+    def release_engine(self, engine_type: TTSEngine, config: Optional[Dict] = None):
+        """Release an acquired engine (decrement refcount and unload when zero)."""
+        config = config or {}
+        engine_key = self._make_key(engine_type, config)
+
+        with self._lock:
+            if engine_key not in self.loaded_engines:
+                return
+
+            # Decrement refcount
+            self._ref_counts[engine_key] = self._ref_counts.get(engine_key, 1) - 1
+
+            if self._ref_counts[engine_key] <= 0:
+                # Fully release
+                engine = self.loaded_engines.pop(engine_key)
+                try:
+                    engine.unload()
+                except Exception as e:
+                    logger.warning(f"Error while unloading engine {engine_key}: {e}")
+
+                if engine_key in self.engine_usage:
+                    del self.engine_usage[engine_key]
+
+                if engine_key in self._ref_counts:
+                    del self._ref_counts[engine_key]
+
+    @contextlib.contextmanager
+    def use_engine(self, engine_type: TTSEngine, config: Optional[Dict] = None, auto_load: bool = True):
+        """Context manager to acquire and automatically release an engine.
+
+        Usage:
+            with manager.use_engine(TTSEngine.PIPER, config={"model": "..."}):
+                # engine loaded and refcount increased
+                ...
+        """
+        engine = self.get_engine(engine_type, config=config, auto_load=auto_load)
+        try:
+            yield engine
+        finally:
+            try:
+                self.release_engine(engine_type, config)
+            except Exception:
+                pass
 
     def synthesize(
         self,
@@ -492,6 +770,7 @@ class TTSEngineManager:
         speaker: str,
         engine_type: Optional[TTSEngine] = None,
         config: Optional[Dict] = None,
+        progress_callback: Optional[callable] = None,
         **kwargs,
     ) -> Tuple[np.ndarray, int]:
         """
@@ -510,7 +789,12 @@ class TTSEngineManager:
         engine_type = engine_type or self.default_engine
         engine = self.get_engine(engine_type, config)
 
-        audio = engine.synthesize(text, speaker, **kwargs)
+        # pass progress_callback into engine implementation if supported
+        try:
+            audio = engine.synthesize(text, speaker, progress_callback=progress_callback, **kwargs)
+        except TypeError:
+            # Engine doesn't accept progress_callback, call without
+            audio = engine.synthesize(text, speaker, **kwargs)
         return audio, engine.sample_rate
 
     def preload_engines(self, engines: List[Tuple[TTSEngine, Dict]]):
@@ -530,22 +814,27 @@ class TTSEngineManager:
         """Entlade alle Engines"""
         logger.info("Unloading all engines...")
 
-        for key, engine in self.loaded_engines.items():
-            engine.unload()
+        with self._lock:
+            for key, engine in list(self.loaded_engines.items()):
+                try:
+                    engine.unload()
+                except Exception as e:
+                    logger.warning(f"Error unloading engine {key}: {e}")
 
-        self.loaded_engines.clear()
-        self.engine_usage.clear()
+            self.loaded_engines.clear()
+            self.engine_usage.clear()
 
         logger.info("All engines unloaded")
 
     def get_stats(self) -> Dict:
         """Hole Engine-Statistiken"""
-        return {
-            "loaded_engines": list(self.loaded_engines.keys()),
-            "usage": self.engine_usage.copy(),
-            "total_memory": sum(e.get_memory_usage() for e in self.loaded_engines.values())
-            / 1024**3,  # GB
-        }
+        with self._lock:
+            total_memory = sum(e.get_memory_usage() for e in self.loaded_engines.values()) / 1024 ** 3
+            return {
+                "loaded_engines": list(self.loaded_engines.keys()),
+                "usage": self.engine_usage.copy(),
+                "total_memory": total_memory,
+            }
 
     def __repr__(self) -> str:
         return (

@@ -16,6 +16,7 @@ from ..llm.ollama_client import OllamaClient
 from ..tts.ebook2audiobook_adapter import Ebook2AudiobookAdapter
 from ..voices.library import VoiceAge, VoiceGender, VoiceStyle, get_voice_library
 from .config import PodcastConfig, PodcastStyle, ScriptLine, Speaker
+from ..tts.engine_manager import get_engine_manager, TTSEngine
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -114,7 +115,27 @@ Dauer: {duration} Minuten
         # 2. Audio generieren
         console.print("[cyan]🎙️ Generiere Audio...[/cyan]")
         temp_audio = output.replace(".mp3", "_temp.wav")
-        self.tts_adapter.generate_audio(script, temp_audio, config)
+
+        # If the config specifies a TTS engine, acquire it for the duration
+        # of audio generation using the engine manager context to ensure
+        # deterministic acquire/release and avoid global unloads.
+        engine_manager = get_engine_manager()
+        engine_type = None
+        if config.voice_engine:
+            try:
+                engine_type = TTSEngine(config.voice_engine)
+            except ValueError:
+                engine_type = None
+
+        if engine_type:
+            console.print(f"[dim]Vorchlade und sperre TTS-Engine: {engine_type.value}[/dim]")
+            with engine_manager.use_engine(engine_type, config={"model": config.voice_engine}):
+                # Generiere Audio (adapter kümmert sich um intern verwendete Engines)
+                self.tts_adapter.generate_audio(script, temp_audio, config)
+            console.print("[dim]TTS-Engine freigegeben[/dim]")
+        else:
+            # No specific engine requested or unknown; generate normally
+            self.tts_adapter.generate_audio(script, temp_audio, config)
 
         # 3. Post-Processing
         console.print("[cyan]🎚️ Audio-Nachbearbeitung...[/cyan]")
@@ -316,7 +337,21 @@ Dauer: {duration} Minuten
         )
 
         temp_audio = output.replace(".mp3", "_temp.wav")
-        self.tts_adapter.generate_audio(script, temp_audio, config)
+        # If a specific engine is requested in the config, use the manager
+        # context to hold it during generation instead of global unload.
+        engine_manager = get_engine_manager()
+        engine_type = None
+        if config.voice_engine:
+            try:
+                engine_type = TTSEngine(config.voice_engine)
+            except ValueError:
+                engine_type = None
+
+        if engine_type:
+            with engine_manager.use_engine(engine_type, config={"model": config.voice_engine}):
+                self.tts_adapter.generate_audio(script, temp_audio, config)
+        else:
+            self.tts_adapter.generate_audio(script, temp_audio, config)
         final_path = self.audio_processor.process(temp_audio, output, config)
 
         if os.path.exists(temp_audio):

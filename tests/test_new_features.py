@@ -6,6 +6,7 @@ Test Suite für neue Features (v1.1 + v1.2)
 import logging
 import sys
 from pathlib import Path
+import pytest
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -17,12 +18,17 @@ def test_thread_manager():
     logger.info("\n=== Test ThreadManager ===")
 
     import tkinter as tk
+    import pytest
+    from tkinter import TclError
 
     from podcastforge.gui.threading_base import UITaskObserver, get_thread_manager
 
     # Create root (needed for UITaskObserver)
-    root = tk.Tk()
-    root.withdraw()
+    try:
+        root = tk.Tk()
+        root.withdraw()
+    except TclError:
+        pytest.skip("tkinter not available in this environment")
 
     # Get ThreadManager
     manager = get_thread_manager(max_workers=2)
@@ -100,10 +106,14 @@ def test_timeline_editor():
     logger.info("\n=== Test Timeline-Editor ===")
 
     import tkinter as tk
-
+    from tkinter import TclError
     from podcastforge.gui.timeline import Scene, TimelineEditor
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except TclError:
+        pytest.skip("tkinter not available in this environment")
+
     root.title("Timeline Test")
 
     # Create timeline
@@ -167,10 +177,14 @@ def test_multitrack_editor():
     logger.info("\n=== Test Multi-Track Editor ===")
 
     import tkinter as tk
-
+    from tkinter import TclError
     from podcastforge.gui.multitrack import MultiTrackEditor
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except TclError:
+        pytest.skip("tkinter not available in this environment")
+
     root.title("Multi-Track Test")
     root.geometry("1200x600")
 

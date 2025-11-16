@@ -74,6 +74,17 @@ class TTSEngineFactory:
         return engine_class(config)
 ```
 
+        Hinweis: Der zentrale `TTSEngineManager` stellt neben der Factory auch einen Context-Manager
+        (`use_engine`) zur Verfügung, der Engines referenzzählt und so deterministisches Load/Unload
+        ermöglicht. Verwende `use_engine` für kurzlebige, thread-safe Zugriffe, statt manuelles
+        `get_engine`/`unload_all`.
+
+        ```python
+        mgr = get_engine_manager(max_engines=2)
+        with mgr.use_engine(TTSEngine.PIPER, config={}) as engine:
+            engine.synthesize("preview", speaker="0")
+        ```
+
 ### 2. **Singleton Pattern** - Audio Player
 
 ```python
@@ -220,6 +231,291 @@ class EditorController:
 ```
 
 ---
+
+## 📦 eBook → Podcast Generator (Integration)
+
+Dieser Abschnitt beschreibt das konkrete Mapping und empfohlene Patterns für die
+eBook→Podcast‑Generator‑Integration. Die Implementierung befindet sich derzeit in
+`src/podcastforge/integrations/ebook2audiobook/orchestrator.py` und nutzt die
+allgemeinen Bausteine aus der Architektur: `TTSEngineManager`, `AudioPostProcessor`,
+und die Threading/Observer‑Hilfen.
+
+Architektur‑Mapping:
+- Extraction: `extract_chapters_from_epub()` (Service/Adapter). Liest EPUBs (optional
+    via `ebooklib`) und liefert Kapitel mit `title`/`content`.
+- Orchestration: `create_podcast_project_from_ebook()` (Business Logic). Zerlegt Kapitel
+    in Paragraphen, orchestriert TTS, Cache, Combining und Postprocessing.
+- TTS: `TTSEngineManager` (Factory/Manager) verwaltet konkrete Engines; Verwende
+    `use_engine()` für deterministisches Load/Unload, oder die Convenience `synthesize()`
+    für einfache Workflows.
+- Postprocessing: `AudioPostProcessor` (Strategy Pattern) wendet Normalisierung,
+    Kompression und Fade‑Strategien an.
+- Output: `project_manifest.json` (Data Layer) enthält Kapiteldateien und Startzeiten.
+
+Empfohlene Laufzeit‑Patterns (konkret empfohlen):
+- Resource safe TTS calls: Verwende `with get_engine_manager().use_engine(engine):`
+    wenn du eine Engine sequenziell nutzen willst; für parallelisierte Batch‑Synthese
+    ist die Manager‑Convenience `synthesize()` geeignet, weil sie Engine‑Caching und
+    LRU‑Eviction orchestriert.
+- Parallelisierung: Nutze `get_thread_manager()` (oder `ThreadPoolExecutor`) mit
+    begrenzter `max_workers` für Absatz‑Parallelisierung. Begrenze die Anzahl geladener
+    Engines (`TTSEngineManager(max_engines=2)`) um OOM/VRAM‑Probleme zu vermeiden.
+- Progress & UI integration: Publishe Fortschritt über das bestehende Observer/Task‑API
+    (`ThreadManager` + `ITaskObserver`) oder über eine `on_progress(task_id, progress, msg)`‑Callback,
+    damit die GUI Live‑Feedback und Abbruch unterstützt.
+
+Fallbacks & Minimalität
+- Die Integration enthält Lazy‑Imports (z. B. `pydub`, `ebooklib`) und einfache
+    Wave‑Fallbacks, damit Developer‑Tests und CI ohne native Abhängigkeiten laufen.
+    Für volle Funktionalität (Stille‑Trim, MediaInfo) installiere die optionalen
+    Extras (siehe Setup unten).
+
+Setup / Optional Dependencies
+- Für volle Funktionalität installiere:
+    - `ebooklib`, `beautifulsoup4` (EPUB parsing)
+    - `pydub` + `ffmpeg` (audio concat & silence detection)
+    - TTS engines (Piper, Bark, XTTS) je nach Bedarf
+
+Beispiel‑Calls (Empfohlen):
+```python
+from podcastforge.tts import get_engine_manager, TTSEngine
+from podcastforge.integrations.ebook2audiobook.orchestrator import create_podcast_project_from_ebook
+
+mgr = get_engine_manager(max_engines=2)
+res = create_podcast_project_from_ebook('book.epub', 'outdir', speaker='narrator', engine='PIPER', max_workers=2, on_progress=lambda id,p,msg: print(id,p,msg))
+```
+
+Konsequenzen für Entwickler
+- Dokumentiere optionalen extras in `pyproject.toml` / `requirements.txt` (z. B. `[ebook]`, `[audio]`).
+- Implementiere End‑to‑end Tests, die dry‑run Modi nutzen (keine heavy native libs).
+
+
+---
+
+## 🔊 Polyphoner (Multi‑TTS) Workflow — Schritt für Schritt
+
+Ziel: Aus beliebigem Text oder Textfragmenten ein mehrstimmiges (polyphones) Podcast‑Projekt erzeugen, das mehrere TTS‑Stimmen, zeitliche Platzierung, Post‑Processing und ein importierbares Projekt‑Manifest enthält. Die folgenden Schritte sind als genaue Implementierungs‑ und Integrationsbeschreibung gedacht — inklusive API‑Shapes, Dateinamen und empfohlener Runtime‑Verhalten.
+
+1) Ingestion (Input)
+    - Eingabemedium: freier Text, strukturierte Script‑Datei (JSON/YAML), EPUB/Text‑Fragment oder Editor‑Inhalt.
+    - Erwartetes Objekt (intern): `ScriptSource` mit Feldern:
+      - `source_id: str` (z. B. filename or UUID)
+      - `format: 'text'|'structured'|'epub'|'script_json'`
+      - `payload: str|dict` (raw content or parsed structure)
+
+2) Parsing & Segmentation
+    - Aufgabe: Zerlegen in atomic utterances (Sätze/Absätze), optional nach Kapitel/Abschnitt gruppiert.
+    - Output: Liste von `Utterance`:
+      - `id: str` (stable key, z. B. hash(source_id + index))
+      - `text: str`
+      - `chapter: Optional[str]`
+      - `suggested_speaker: Optional[str]` (falls im Script angegeben)
+      - `meta: dict` (emotion, pause_after, speed_hint)
+    - Implementation: `split_into_paragraphs()` / `parse_structured_script()`.
+
+3) Speaker Assignment
+    - Nutzer‑gesteuert oder heuristisch (VoiceLibrary.suggest_for_podcast_style).
+    - Mapping in `ProjectSpeaker` dataclass:
+      - `speaker_id`, `name`, `voice_profile_id`, `gender`, `preferred_engine`
+    - Im Editor: Drag&Drop aus `VoiceLibrary` auf Zeile legt `speaker_id` fest.
+
+4) Preflight & Resource Planning
+    - Analysiere benötigte Engines und geschätzten VRAM/Time (per voice/engine).
+    - Erzeuge `Plan` mit `batches` für parallele Synthese (z. B. 4 workers, max 2 concurrent engines).
+    - API: `planner = create_tts_plan(utterances, speakers, max_workers, engine_constraints)`
+
+5) Caching & Cache Keys
+    - Cache‑Key: `sha256(engine + voice_profile + text + postproc_flags)`
+    - Cache‑Location: `cache/tts/{first2}/{key}.wav` oder `cache/tts/{key}.npz` für numpy arrays.
+    - Vor jeder Synthese: `if exists(cache_key): reuse`.
+
+6) Batched/Parallel TTS Synthesis
+    - Laufzeit: `get_thread_manager().submit_task(tts_task_fn, priority=...)` oder ThreadPool mit controlled concurrency.
+    - Task‑Fn Signatur: `task_fn(task_id, progress_callback)` (verwende `progress_callback(percent, msg)` für UI‑Updates).
+    - Engine Management: `with get_engine_manager().use_engine(engine_type): engine.synthesize(text, voice)` oder `get_engine_manager().synthesize(...)` für simpler API.
+
+7) Postprocessing per‑utterance
+    - Normalisierung, Silence‑trim, fade_in/out, headroom, optional voice‑matching (EQ).
+    - Ergebnisdatei pro Utterance: `utterances/{utterance_id}.wav` (16‑bit PCM, sample_rate project default).
+
+8) Alignment / Timing
+    - Berechne Dauer jeder Utterance (via numpy length / sr) und generiere timeline offsets.
+    - Für dialogische Überlappungen: Policy entscheidet (no overlap, crossfade, ducking).
+    - Timeline Entry (manifest): `{utterance_id, speaker_id, file, offset_sec, duration_sec, postproc_flags}`
+
+9) Mixing / Chapter Combining
+    - Optionaler Schritt: Kombiniere Utterances pro Kapitel zu Chapter WAVs (concatenate or crossfade).
+    - Finaler Mix: `mix_master(chapters, background_tracks, transitions) -> final_mix.wav`.
+
+10) Manifest & Editor Import
+    - Schreibe `project_manifest.json` mit:
+      - `speakers: [ {speaker_id, name, voice_profile_id, meta} ]`
+      - `utterances: [ {id, speaker_id, file, offset, duration, meta} ]`
+      - `chapters: [ {id, title, start_offset, utterance_ids} ]`
+      - `project_metadata: {sample_rate, channels, created_at, engine_summary}`
+    - Publishe Event: `EventBus.publish('ebook2audiobook.open_project', {'manifest': path})` damit der Editor automatisch importiert.
+
+11) UI Notification & Error Handling
+    - Publish Fortschritt per Utterance: `EventBus.publish('script.tts_progress', {task_id, utterance_id, percent})`.
+    - Fehler: markiere Utterance als `failed` im Manifest und füge `error`-Feld hinzu. GUI bietet Retry/Skip pro Utterance.
+
+12) Reuse & Incremental Workflows
+    - Re-Synthese nur für geänderte Utterances (diff via cache keys). Ermögliche `rebuild --changed-only`.
+
+13) Export / Delivery
+    - Finaler Export (mp3/wav) über `export_audio()`; biete Loudness‑Target (e.g. -16 LUFS für Podcasts).
+
+API‑Beispiel (Skript):
+```python
+from podcastforge.integrations.script_orchestrator import synthesize_script_preview
+
+synthesize_script_preview(
+     script_path='episode1.yaml',
+     out_dir='out/episode1',
+     max_workers=3,
+     engine='PIPER',
+     on_progress=lambda e: print(e)
+)
+```
+
+Files & Naming Conventions
+- `out/{project}/manifest.json`
+- `out/{project}/utterances/{utterance_id}.wav`
+- `out/{project}/chapters/{chapter_id}.wav`
+- `cache/tts/{key}.wav`
+
+Runtime Guarantees / Limits
+- Verwende bounded concurrency (configurable `max_workers`) und Engine‑pooling (`TTSEngineManager(max_engines=2)`) um OOM/VRAM zu vermeiden.
+- Provide a `dry_run=True` mode for CI to validate pipelines without heavy native deps.
+
+---
+
+## ✅ UI/UX — Abgleich des Workflows mit der aktuellen Editor‑UI
+
+Kurzbewertung, ob die aktuelle UI den obigen Workflow unterstützt, und konkrete Verbesserungs‑Vorschläge.
+
+- **Voice Library (exists)**:
+  - Status: Vorhanden (`Voice Library` Panel). Bietet Filter nach Sprache/Stil und Listbox.
+  - Erfüllt: Auswahl und Preview sind verfügbar.
+  - Verbesserung: Detail‑Dialog für Voice‑Metadaten, Ladeindikator, Bulk‑Markierung für Batch‑Zuordnung.
+
+---
+
+## **FFmpeg Installation**
+
+Für lokale Nutzung wird `ffmpeg` auf dem System benötigt. Um die Arbeit mit
+PodcastForge zu vereinfachen, befindet sich ein kleines Installer‑Skript im
+Projekt: `scripts/install_ffmpeg.py`.
+
+- So installierst du schnell ffmpeg (PowerShell):
+
+```
+python .\scripts\install_ffmpeg.py
+```
+
+- Falls du eine spezielle Build‑URL verwenden willst (z. B. eigene statische Builds):
+
+```
+python .\scripts\install_ffmpeg.py --url "https://example.com/path/to/ffmpeg.zip"
+```
+
+- Das Skript legt die Binärdatei in `third_party/ffmpeg/bin` ab und gibt eine
+    kurze Anleitung aus, wie du diesen Ordner temporär deiner PATH‑Variable
+    hinzufügst (PowerShell/Bash‑Beispiele werden ausgegeben).
+
+Wenn du möchtest, kann ich eine PowerShell‑Variante (`.ps1`) hinzufügen oder
+einen GitHub Actions‑Job, der `ffmpeg` vor dem E2E‑Lauf auf dem Runner installiert.
+
+
+---
+
+## 🔁 Streaming-Konvertierung & FFmpeg (on-the-fly MP3/MP4)
+
+PodcastForge unterstützt eine on-the-fly Kompression von Preview-Audio mittels `ffmpeg`.
+Anstatt eine große WAV-Datei zu erstellen und diese anschließend zu konvertieren, kann der
+Orchestrator per-utterance WAV‑Snippets direkt in einen ffmpeg‑Prozess pipen, der MP3/MP4
+progressiv schreibt. Das reduziert Speicherbedarf und verbessert die Zeit bis zur ersten
+Abspielbarkeit in der Editor‑UI.
+
+Wesentliche Punkte:
+- Erfordert `ffmpeg` auf dem System‑PATH oder einen expliziten Pfad zur `ffmpeg.exe`.
+- Die Orchestrator‑Implementierung versucht zuerst die Streaming‑Route (pipe Input → ffmpeg → Datei)
+    und fällt bei Inkompatibilitäten (unterschiedliche Sample‑Rates/Kanäle) oder Fehlern auf das
+    altbekannte Concat‑then‑Convert‑Verfahren zurück.
+- Für MP4 setzen wir fragmentierende Flags, damit der Ausgabedatei progressives Abspielen möglich ist:
+
+    `-movflags +faststart+frag_keyframe+empty_moov`
+
+    Diese Flags sorgen dafür, dass der `moov` Atom verschiebbar und fragmentiert geschrieben wird —
+    Player können dann mit dem Abspielen beginnen, während die Datei noch wächst.
+
+Beispielaufruf (CLI):
+
+```powershell
+$env:PYTHONPATH='src'
+python -c "from podcastforge.integrations.script_orchestrator import synthesize_script_preview; print(synthesize_script_preview('examples/tmp_script.json','out', output_format='mp4'))"
+```
+
+Fehlertoleranz:
+- Wenn `ffmpeg` nicht gefunden wird, publiziert der Orchestrator ein `script.preview_ready` Event mit
+    dem Pfad zur WAV und einer Warnmeldung, dass keine Konvertierung durchgeführt wurde.
+- Wenn Streaming fehlschlägt, fällt der Ablauf auf das sichere Concat+Convert‑Verhalten zurück und gibt
+    ebenfalls eine Warnung aus.
+
+Performance‑Tuning:
+- Verwenden Sie `audio_bitrate` (z. B. `192k`) zur Steuerung von Qualität/Größe.
+- Fragmented MP4 + `faststart` reduziert wahrgenommene Latenz für Web‑Player.
+- Für niedrigste Latenz beim direkten Streaming kann ffmpeg auf `stdout` (pipe:1) schreiben und ein
+    kleines HTTP/WebSocket Proxy‑Modul die Bytes an den Editor streamen (siehe implementierte Erweiterung
+    für WebSocket/HTTP‑Streaming, optional).
+
+Security Hinweis:
+- Die Anwendung ruft `ffmpeg` auf dem System auf — stellen Sie sicher, dass die Binary aus einer
+    vertrauenswürdigen Quelle stammt. Die Orchestrator‑Logik ist so implementiert, dass bei Fehlern
+    sicher auf WAV‑Output zurückgefallen wird.
+
+
+- **Active Speakers Pane (exists)**:
+  - Status: Vorhanden als `Aktive Sprecher` Listbox.
+  - Erfüllt: Anzeige und Edit/Remove/Add vorhanden.
+  - Verbesserung: Zeige `speaker_id`, `voice_profile_id`, small avatar; Support für drag排序 und Reihenfolge (timeline order).
+
+- **Drag & Drop Voice → Script (partially implemented)**:
+  - Status: Lightweight DnD implementiert (mouse press → release). OK als MVP.
+  - Lücken: kein visuelles Ghost, keine präzise Target‑Highlighting (nur line highlight), keine Multi‑select Drag, kein keyboard‑accessible assign.
+  - Vorschlag: Implementiere Tk DnD oder use canvas overlay für Ghost, und Shortcut `Ctrl+Enter` + `Assign Voice` für accessibility.
+
+- **Per‑line Properties Pane (exists)**:
+  - Status: `Sprecher`, `Emotion`, `Pause`, `Speed` vorhanden.
+  - Erfüllt: Kann Utterance‑Eigenschaften setzen.
+  - Verbesserung: Zeige Synthese‑Status pro Zeile (idle/queued/processing/done/error) und Quick‑Retry Button.
+
+- **Preview UX (exists, improved)**:
+  - Status: Preview Button + context menu implemented; runs off UI thread.
+  - Erfüllt: Schnell‑Feedback für einzelne Zeilen/voices.
+  - Verbesserung: Add per‑voice waveform preview, show engine used, show cache hit/miss.
+
+- **Batch Synthesis / Orchestrator Controls (missing)**:
+  - Status: Keine dedicated UI zum Starten von batched generation (script → full project) existiert.
+  - Vorschlag: Add `Generate Project` panel with options: `max_workers`, `engine`, `dry_run`, `mix_policy` and a progress view with per‑utterance progress bars and retry controls.
+
+- **Timeline / Mixing Controls (partial)**:
+  - Status: Timeline frame exists but not implemented.
+  - Vorschlag: Implement an interactive timeline view showing utterances with offsets, allowing drag to nudge timing, crossfade editor, and solo/mute per speaker.
+
+- **Import Flow (manifest → Editor)**:
+  - Status: Importer publishes `ebook2audiobook.open_project` event and Editor subscribes. Good.
+  - Improvement: Provide `Import Preview` mode that imports manifest read‑only to validate offsets before committing to project.
+
+Priorisierte UI‑Änderungen (kurzfristig)
+- 1) Add `Generate Project` dialog with `dry_run` and `max_workers` (high impact).
+- 2) Enhance per‑line status indicator (queued/processing/done/error) and retry action.
+- 3) Improve Drag&Drop visual UX (ghost, snapping, keyboard fallback).
+
+Langfristige UX‑Ziele
+- Interactive Timeline Editor (drag timing, crossfade curves, background track lanes).
+- Collaborative editing (share manifest, remote TTS execution with cloud engines).
+
 
 ## 📋 Best Practices
 

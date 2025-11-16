@@ -139,6 +139,9 @@ docker-compose exec podcastforge generate \
 - [Voice Cloning](docs/guides/voice-cloning.md)
 - [API Referenz](docs/api/README.md)
 - [Beispiele](examples/)
+ - [Copilot Introduction](./.github/indroduction)  
+     (Kurzanleitung für automatisierte Assistenz; bitte bei automatischen Änderungen beachten)
+ - [Dokumentationspflicht / ToDo-Vorlage](docs/todo.md)
 
 ## 🛠️ Architektur
 

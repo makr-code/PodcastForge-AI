@@ -1,0 +1,101 @@
+Copilot Introduction — Projekt: PodcastForge-AI
+
+Zweck
+- Diese Datei gibt präzise Anweisungen an GitHub Copilot / Coding‑Assistenten, wie im Repository `PodcastForge-AI` gearbeitet werden soll.
+- Ziel: schnelle, sichere und konsistente Unterstützung beim Implementieren von Features, Bugfixes, Tests und Dokumentation.
+
+Kontext / Kurzüberblick
+- Sprache: Python 3 (Typ-Hinweise werden bevorzugt).
+- Projektstruktur (Wichtigste Pfade):
+  - `src/podcastforge/` : Hauptpaket mit GUI, Audio, TTS, Integrationen.
+  - `src/podcastforge/gui/` : GUI-Komponenten, `main_window.py`, `editor.py`, `threading_base.py`.
+  - `src/podcastforge/tts/` : TTS-Engine-Manager und Adapter.
+  - `src/podcastforge/integrations/` : Integrationen (z.B. `ebook2audiobook`, `script_orchestrator.py`).
+  - `tests/` : Pytest-Testfälle.
+  - `run_editor.py` : Startet die Anwendung (für manuelle GUI-Tests).
+
+Wichtige Konzepte / APIs
+- ThreadManager (Singleton)
+  - Pfad: `src/podcastforge/gui/threading_base.py`
+  - Verwenden: `from ..gui.threading_base import get_thread_manager, TaskPriority`
+  - Submit tasks mit `submit_task(task_fn, task_id=..., priority=..., metadata=..., callback=...)`.
+  - `task_fn` signature: akzeptiert `task_id` und `progress_callback`.
+  - Verwende `get_thread_manager()` statt eigene ThreadPools, damit GUI observer funktioniert.
+
+- EventBus (leichtgewichtig)
+  - Pfad: `src/podcastforge/core/events.py`
+  - Verwenden: `from ..core.events import get_event_bus`
+  - `publish(event_name, payload)` um GUI/andere Komponenten zu informieren.
+  - `subscribe(event_name, handler)` in GUI oder Integrationen.
+  - Standard-Events im Repo:
+    - `ebook2audiobook.tts_progress`, `ebook2audiobook.project_ready`, `ebook2audiobook.open_project`
+    - `script.tts_progress`, `script.preview_ready`
+
+- TTS Engine Manager
+  - Pfad: `src/podcastforge/tts/engine_manager.py`
+  - Entrypoint: `get_engine_manager()` liefert ein Objekt mit `synthesize(text, speaker, engine_type=None, **kwargs)`.
+  - Return: numpy-array audio (float32 -1..1) und sample_rate. Schreibe WAV mit `_write_wav` Hilfsfunktion.
+
+- Integrationen / Orchestratoren
+  - Implementiere business logic in `src/podcastforge/integrations/*`.
+  - Verwende lazy imports für optionale/gewichtige Abhängigkeiten (z. B. `pydub`, `ebooklib`).
+  - Baue robuste Fallbacks (z. B. einfache WAV‑Konkatenation mit `wave`), damit Tests/CI nicht von nativen Binaries abhängen.
+
+Tests & Entwicklungs-Werkzeuge
+- Tests: `pytest`.
+  - Ausführen (PowerShell):
+    $env:PYTHONPATH='src'; python -m pytest -q
+- Beim Erstellen/Ändern von Dateien:
+  - Mache kleine, fokussierte Commits mit klaren Messages.
+  - Ergänze oder passe Unit‑Tests (`tests/`) an, wenn du Funktionalität änderst.
+  - Sorge dafür, dass `PYTHONPATH='src'` gesetzt ist, damit Tests `podcastforge` finden.
+
+Code Style & Konventionen
+- Schreibe saubere, prägnante Docstrings (Deutsch oder Englisch sind ok, konsistent sein).
+- Verwende Typ‑Annotationen für öffentliche Funktionen.
+- Keine einzeiligen Variablennamen; keine unnötigen Code-Rewrites.
+- Ändere nur die minimal erforderlichen Dateien für eine Aufgabe.
+- Keine Lizenz/Header-Dateien hinzufügen, außer explizit angefordert.
+- Keine umfangreichen Refactorings ohne Absprache.
+
+Patch/Datei-Operationen (Copilot-Instruktionen)
+- Wenn du Dateien änderst, erstelle gezielte Patches (kleine, atomare Änderungen).
+- Nach Dateiänderungen: führe die relevanten Tests lokal aus.
+- Ergänze Änderungen mit Tests, wenn möglich.
+
+CI/Abhängigkeiten
+- Optionale (schwere) Abhängigkeiten: `pydub`, `ffmpeg`, `ebooklib`.
+- Implementiere Lazy-Loading / Fallback-Strategien, damit CI/Testläufe ohne diese Abhängigkeiten möglich bleiben.
+
+GUI-Interaktion
+- Wenn Hintergrundaufgaben laufen, benutze `get_thread_manager()` und notify via observer oder EventBus.
+- Für automatische Projekt-Importe sende `ebook2audiobook.open_project` mit payload `{'project': '<path>'}`. `MainWindow` behandelt dieses Event und öffnet den Editor.
+
+Delivery / Review
+- Mach Pull Requests (oder Commit-Branches) mit erklärender Beschreibung:
+  - Ziel der Änderung
+  - Welche Dateien wurden geändert
+  - Wie wurde getestet (Unit/Manuell)
+- Achte auf Backwards-Compatibility: bestehende APIs nicht brechen.
+
+Sichere Patterns / Fehlerbehandlung
+- Fehler in Integrationen: gib nützliche Fehlermeldungen zurück (z. B. "TTS synth failed: <error>").
+- Network/IO: timeout und retry patterns bei Bedarf.
+- Long-running tasks: erzeuge Events mit Status `start`, `progress`, `done`, `error`.
+
+Beispiele / Quick-Commands
+- Tests (PowerShell):
+  $env:PYTHONPATH='src'; python -m pytest -q
+- Editor starten (manuell):
+  & "C:/Program Files/Python313/python.exe" c:/VCC/VCCDB/PodcastForge-AI/run_editor.py
+
+Wünsche / Grenzen des Copilot-Verhaltens (Guidelines)
+- Sei präzise: antworte mit minimal notwendigen Änderungen.
+- Wenn etwas unklar ist, schlage 1‑2 kurze Optionen vor und frage nach einer Bestätigung.
+- Führe keine massiven Code‑Umbauten ohne Rückfrage durch.
+- Wenn du Tests änderst, dokumentiere warum die Änderung notwendig war.
+
+Dateipfad dieser Anleitung
+- `./.github/indroduction` (dieser Datei)
+
+Vielen Dank — arbeite inkrementell, teste lokal und kommuniziere Änderungen klar in PRs.

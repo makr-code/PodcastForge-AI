@@ -221,33 +221,6 @@ def models():
         console.print(f"[red]Fehler: {e}[/red]")
 
 
-@cli.command()
-def models():
-    """
-    Zeigt verfügbare Ollama Modelle
-    """
-    try:
-        import requests
-
-        response = requests.get("http://localhost:11434/api/tags")
-
-        if response.status_code == 200:
-            models = response.json().get("models", [])
-
-            console.print("\n[bold]Verfügbare Ollama Modelle:[/bold]\n")
-
-            for model in models:
-                name = model["name"]
-                size = model.get("size", 0) / (1024**3)  # GB
-                console.print(f"  • [cyan]{name}[/cyan] ({size:.1f} GB)")
-
-            console.print(f"\n[dim]Gesamt: {len(models)} Modelle[/dim]")
-        else:
-            console.print("[red]Ollama nicht erreichbar[/red]")
-
-    except Exception as e:
-        console.print(f"[red]Fehler: {e}[/red]")
-
 
 @cli.command()
 @click.option("--language", "-l", default=None, help="Filter nach Sprache (de, en, etc.)")

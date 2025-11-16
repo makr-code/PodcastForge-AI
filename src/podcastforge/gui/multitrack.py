@@ -87,6 +87,7 @@ class Track:
     muted: bool = False
     solo: bool = False
     color: str = "#569cd6"
+    metadata: Dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.id:

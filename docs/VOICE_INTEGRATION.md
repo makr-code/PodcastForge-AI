@@ -427,6 +427,21 @@ class TTSEngineManager:
         del self.engine_usage[least_used]
 ```
 
+Ergänzung: Die aktuelle Implementierung des `TTSEngineManager` bietet neben `get_engine`
+auch einen Context-Manager `use_engine(...)` und eine `release_engine(...)`-Methode.
+`use_engine` erhöht intern eine Referenzanzahl für die geladene Engine und sorgt dafür,
+dass die Engine erst entladen wird, wenn die letzte Nutzung beendet ist. Diese API ist
+thread-safe und empfohlen für deterministische Nutzung (z.B. beim Erzeugen eines Podcasts).
+
+Beispiel:
+
+```python
+mgr = get_engine_manager(max_engines=2)
+with mgr.use_engine(TTSEngine.BARK, config={"model": "v2"}) as engine:
+    audio = engine.synthesize("Hello world", speaker="v2/en_speaker_6")
+# nach dem Block: automatische Release/Unload bei letzter Referenz
+```
+
 ---
 
 ## 🔍 Weitere interessante GitHub-Projekte

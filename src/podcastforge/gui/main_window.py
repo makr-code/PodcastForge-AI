@@ -28,6 +28,7 @@ from ..core.settings import get_setting, set_setting
 from ..tts.engine_manager import get_engine_manager, TTSEngine
 from .components import StatusBar, apply_theme
 from ..audio.player import get_player
+from ..voices import get_voice_library
 from .settings_dialog import SettingsDialog
 import tkinter.font as tkfont
 
@@ -118,6 +119,12 @@ class MainWindow(tk.Tk):
         except Exception:
             pass
 
+        # Try to auto-load a default project to populate speakers/voices in the sidebar
+        try:
+            self._load_default_project_on_startup()
+        except Exception:
+            pass
+
     # -------------------- UI Construction --------------------
     def _create_menu(self):
         menubar = tk.Menu(self)
@@ -179,6 +186,105 @@ class MainWindow(tk.Tk):
 
         for w in (btn_new, btn_open, btn_save, btn_preview, btn_play, btn_stop, auto_check):
             w.pack(side=tk.LEFT, padx=2)
+
+    # -------------------- Project Auto-Load --------------------
+    def _load_default_project_on_startup(self):
+        """Attempt to find a default project YAML/JSON and populate the sidebar speakers.
+
+        Search order:
+        1. UI setting `ui.default_project`
+        2. Environment var `PF_DEFAULT_PROJECT`
+        3. `projects/example_podcast_project.yaml`
+        4. `examples/projects/*` first match
+        """
+        # 1) setting
+        try:
+            default = get_setting('ui.default_project', '')
+        except Exception:
+            default = ''
+
+        # 2) env var fallback
+        if not default:
+            default = os.getenv('PF_DEFAULT_PROJECT', '')
+
+        candidates = []
+        if default:
+            candidates.append(Path(default))
+
+        # repo-relative candidates
+        repo_root = Path(__file__).resolve().parents[3]
+        candidates.append(repo_root / 'projects' / 'example_podcast_project.yaml')
+        examples_dir = repo_root / 'examples' / 'projects'
+        if examples_dir.exists() and examples_dir.is_dir():
+            for p in examples_dir.glob('*.yaml'):
+                candidates.append(p)
+
+        # Try each candidate until one loads
+        for c in candidates:
+            try:
+                if not c or not Path(c).exists():
+                    continue
+                text = Path(c).read_text(encoding='utf-8')
+                data = None
+                if str(c).lower().endswith(('.yaml', '.yml')):
+                    try:
+                        import yaml as _yaml
+
+                        data = _yaml.safe_load(text)
+                    except Exception:
+                        data = None
+                elif str(c).lower().endswith('.json'):
+                    try:
+                        import json as _json
+
+                        data = _json.loads(text)
+                    except Exception:
+                        data = None
+
+                if data and isinstance(data, dict) and data.get('speakers'):
+                    self._populate_speakers_from_project(data)
+                    self._set_status(f"Projekt geladen: {Path(c).name}")
+                    try:
+                        # persist last project in settings for quick access
+                        set_setting('ui.last_project', str(c))
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _populate_speakers_from_project(self, project_data: dict):
+        """Populate the left sidebar `voice_list` from project dict's `speakers`.
+
+        Each speaker entry may have `name` and `voice` keys.
+        """
+        try:
+            speakers = project_data.get('speakers') or []
+            # If new card UI exists, build cards
+            if hasattr(self, 'speakers_inner'):
+                # clear existing cards
+                for c in getattr(self, 'speaker_cards', []):
+                    try:
+                        c.destroy()
+                    except Exception:
+                        pass
+                self.speaker_cards = []
+                for s in speakers:
+                    name = s.get('name') if isinstance(s, dict) else str(s)
+                    voice = s.get('voice') if isinstance(s, dict) else ''
+                    desc = s.get('description', '') if isinstance(s, dict) else ''
+                    card = self._create_speaker_card(name, voice, desc)
+                    self.speaker_cards.append(card)
+            else:
+                self.voice_list.delete(0, tk.END)
+                for s in speakers:
+                    name = s.get('name') if isinstance(s, dict) else str(s)
+                    voice = s.get('voice') if isinstance(s, dict) else ''
+                    display = f"{name} - {voice if voice else 'unknown'}"
+                    self.voice_list.insert(tk.END, display)
+        except Exception:
+            pass
 
     def _create_main_panes(self):
         # Paned window to create resizable regions
@@ -260,20 +366,114 @@ class MainWindow(tk.Tk):
         except Exception:
             pass
 
+    # -------------------- Speaker Cards & Search --------------------
+    def _create_speaker_card(self, name: str, voice: str, description: str = ''):
+        """Create a card widget for a speaker in the speakers_inner frame."""
+        try:
+            frame = ttk.Frame(self.speakers_inner, relief=tk.RAISED, borderwidth=1, padding=6)
+            lbl_name = ttk.Label(frame, text=name, font=(None, 10, 'bold'))
+            lbl_name.pack(anchor=tk.W)
+            lbl_voice = ttk.Label(frame, text=f"Voice: {voice}", font=(None, 9))
+            lbl_voice.pack(anchor=tk.W)
+            if description:
+                lbl_desc = ttk.Label(frame, text=description, font=(None, 8), foreground='#666')
+                lbl_desc.pack(anchor=tk.W)
+
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(fill=tk.X, pady=(6, 0))
+
+            def _on_preview():
+                # run preview in background thread to avoid blocking
+                try:
+                    from ..voices.manager import preview_voice
+
+                    threading.Thread(target=lambda: preview_voice(voice, sample_text='Hallo, dies ist eine Vorschau.'), daemon=True).start()
+                except Exception:
+                    pass
+
+            def _on_add_as_speaker():
+                try:
+                    # Add to global speakers mapping used by full editor flows
+                    # Create simple Speaker-like dict entry in settings for now
+                    # Fallback: show a message
+                    messagebox.showinfo('Added', f"Sprecher '{name}' hinzugefügt")
+                except Exception:
+                    pass
+
+            ttk.Button(btn_frame, text='Preview', command=_on_preview, width=8).pack(side=tk.LEFT, padx=2)
+            ttk.Button(btn_frame, text='Add', command=_on_add_as_speaker, width=6).pack(side=tk.LEFT, padx=2)
+
+            # pack card into grid with 2 columns layout
+            cols = max(1, int(self.speakers_inner.winfo_width() / 220)) if self.speakers_inner.winfo_width() else 2
+            frame.pack(fill=tk.X, pady=4, padx=4)
+            return frame
+        except Exception:
+            return None
+
+    def _on_voice_search(self, event=None):
+        """Filter speaker cards by search query (name or voice)."""
+        q = (self.voice_search_var.get() or '').lower()
+        try:
+            for card in getattr(self, 'speaker_cards', []):
+                try:
+                    txts = ' '.join(w.cget('text') for w in card.winfo_children() if isinstance(w, ttk.Label))
+                except Exception:
+                    txts = ''
+                if q in txts.lower():
+                    card.pack(fill=tk.X, pady=4, padx=4)
+                else:
+                    card.pack_forget()
+        except Exception:
+            pass
+
     # -------------------- Populate Regions --------------------
     def _populate_left_sidebar(self, parent: ttk.Frame):
-        # Voices / Speakers list
-        lbl = ttk.Label(parent, text="Voices / Speakers")
+        # Left sidebar: two tabs - Overview (structure) and Speakers (cards)
+        lbl = ttk.Label(parent, text="Project / Voices")
         lbl.pack(anchor=tk.W, padx=6, pady=(6, 0))
 
-        self.voice_list = tk.Listbox(parent, height=20)
-        self.voice_list.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        notebook = ttk.Notebook(parent)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=6, pady=(4, 6))
 
-        # quick search
+        # Overview tab: Treeview showing Title -> Chapter -> Paragraph
+        overview_frame = ttk.Frame(notebook)
+        notebook.add(overview_frame, text='Overview')
+        self.overview_tree = ttk.Treeview(overview_frame)
+        self.overview_tree.pack(fill=tk.BOTH, expand=True)
+
+        # Speakers tab: searchable card layout
+        speakers_frame = ttk.Frame(notebook)
+        notebook.add(speakers_frame, text='Speakers')
+
+        search_frame = ttk.Frame(speakers_frame)
+        search_frame.pack(fill=tk.X, padx=4, pady=(4, 2))
         self.voice_search_var = tk.StringVar()
-        search = ttk.Entry(parent, textvariable=self.voice_search_var)
-        search.pack(fill=tk.X, padx=6)
-        search.bind("<KeyRelease>", self._on_voice_search)
+        search_entry = ttk.Entry(search_frame, textvariable=self.voice_search_var)
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        search_entry.bind('<KeyRelease>', self._on_voice_search)
+
+        # Scrollable card area
+        canvas = tk.Canvas(speakers_frame, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(speakers_frame, orient=tk.VERTICAL, command=canvas.yview)
+        self.speakers_inner = ttk.Frame(canvas)
+
+        self.speakers_inner.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.speakers_inner, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # store references
+        self.speakers_canvas = canvas
+        self.speaker_cards = []
+        # voice library for preview actions
+        try:
+            self.voice_library = get_voice_library()
+        except Exception:
+            self.voice_library = None
 
     def _populate_center_content(self, parent: ttk.Frame):
         # Top: editor / timeline tabs

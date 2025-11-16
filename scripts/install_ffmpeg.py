@@ -83,22 +83,87 @@ def main() -> int:
     bin_dir = os.path.join(dest_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
 
-    url = args.url or default_url_for_platform()
-    if not url:
-        print("No known ffmpeg build URL for this platform. Please provide --url.")
+    # build list of candidate URLs (user-specified first, then platform defaults and common mirrors)
+    candidates: list[str] = []
+    if args.url:
+        candidates.append(args.url)
+
+    default = default_url_for_platform()
+    if default:
+        candidates.append(default)
+
+    # common alternate mirrors (only add those that make sense for platform)
+    plat = sys.platform
+    if plat.startswith("win"):
+        candidates.extend([
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.zip",
+        ])
+    if plat.startswith("linux"):
+        candidates.extend([
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-64bit-static.tar.xz",
+        ])
+    if plat.startswith("darwin"):
+        candidates.extend([
+            "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",
+        ])
+
+    # remove duplicates while preserving order
+    seen = set()
+    urls: list[str] = []
+    for u in candidates:
+        if u and u not in seen:
+            urls.append(u)
+            seen.add(u)
+
+    if not urls:
+        print("No candidate ffmpeg URLs available for this platform. Provide --url.")
         return 2
 
     tmpdir = tempfile.mkdtemp(prefix="pf_ffmpeg_")
+    last_err: Exception | None = None
     try:
         archive_path = os.path.join(tmpdir, "ffmpeg_download")
-        download(url, archive_path)
         extract_dir = os.path.join(tmpdir, "extracted")
         os.makedirs(extract_dir, exist_ok=True)
-        extract_archive(archive_path, extract_dir)
 
-        found = find_ffmpeg(extract_dir)
+        found = None
+        for u in urls:
+            try:
+                print(f"Attempting download from: {u}")
+                download(u, archive_path)
+                try:
+                    extract_archive(archive_path, extract_dir)
+                except Exception as ex:
+                    print(f"Failed to extract archive from {u}: {ex}")
+                    last_err = ex
+                    # clean extract dir and try next URL
+                    shutil.rmtree(extract_dir, ignore_errors=True)
+                    os.makedirs(extract_dir, exist_ok=True)
+                    continue
+
+                found = find_ffmpeg(extract_dir)
+                if found:
+                    print(f"Found ffmpeg binary in archive from: {u}")
+                    break
+                else:
+                    print(f"No ffmpeg binary found inside archive from: {u}")
+                    last_err = RuntimeError("ffmpeg binary not found in archive")
+                    shutil.rmtree(extract_dir, ignore_errors=True)
+                    os.makedirs(extract_dir, exist_ok=True)
+                    continue
+            except Exception as e:
+                print(f"Download or extraction failed for {u}: {e}")
+                last_err = e
+                # try next URL
+                continue
+
         if not found:
-            print("Could not find ffmpeg binary inside downloaded archive.\nLooked under:", extract_dir)
+            print("Could not download and extract a valid ffmpeg binary from any candidate URL.")
+            if last_err:
+                print("Last error:", last_err)
+            print("Temporary files are at:", tmpdir)
             return 3
 
         dest_ffmpeg = os.path.join(bin_dir, os.path.basename(found))
@@ -121,10 +186,10 @@ def main() -> int:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
         return 0
-    except Exception as e:
-        print("Error while installing ffmpeg:", e)
-        print("Temporary files are at:", tmpdir)
-        return 1
+    finally:
+        # If keep_temp was not requested, ensure tmpdir was removed above; otherwise leave it
+        if args.keep_temp:
+            print(f"Temporary files available at: {tmpdir}")
 
 
 if __name__ == "__main__":

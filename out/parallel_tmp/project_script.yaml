@@ -1,0 +1,107 @@
+- chapter: Intro
+  id: u001
+  pause_after: 0.6
+  preview: true
+  speaker: narrator
+  text: 'Willkommen zur ersten Episode von ‚TTS & KI: Technik, Chancen und Verantwortung‘.
+    In dieser Folge sprechen wir über die technischen Grundlagen von Text‑to‑Speech,
+    aktuelle Fortschritte in KI‑Modellen und welche Auswirkungen diese Technologien
+    auf Arbeit und Gesellschaft haben können.'
+- chapter: Intro
+  id: u002
+  pause_after: 0.4
+  preview: true
+  speaker: host
+  text: 'Ich bin euer Moderator. Heute zu Gast: Dr. Anna Meier, Forscherin im Bereich
+    Sprachsynthese. Wir beginnen mit den Grundlagen: Was genau ist TTS, und wie haben
+    sich die Modelle in den letzten Jahren verändert?'
+- chapter: Background
+  emotion: neutral
+  id: u003
+  preview: true
+  speaker: guest
+  speed_hint: 1.0
+  text: Text‑to‑Speech, kurz TTS, übersetzt geschriebenen Text in gesprochenes Audio.
+    Früher nutzte man regelbasierte Systeme oder unit‑selection; heute dominieren
+    neuronale Netze und Transformer‑basierte Modelle, die deutlich natürlichere Stimmen
+    erzeugen.
+- chapter: Background
+  id: u004
+  pause_after: 0.3
+  preview: true
+  speaker: guest
+  text: Wichtige Bausteine sind dabei Sprach‑Encoder, Prosodie‑Modelle und Vocoder.
+    Neuere Ansätze erlauben außerdem Anpassungen von Stil, Emotionalität und Sprechtempo
+    per Conditioning.
+- chapter: Technical Deep Dive
+  id: u005
+  preview: true
+  speaker: host
+  text: 'Können wir kurz die Architektur skizzieren: Encoder, Prosodie‑Netzwerk, Autoregressive
+    vs. non‑autoregressive Vocoder? Was sind die Trade‑offs in Latenz und Qualität?'
+- chapter: Technical Deep Dive
+  id: u006
+  preview: true
+  speaker: guest
+  speed_hint: 0.98
+  text: Autoregressive Modelle liefern oft sehr natürliche Prosodie, sind aber langsamer.
+    Non‑autoregressive Modelle bieten geringere Latenz und werden zunehmend leistungsfähiger.
+    In Produktionssettings spielen auch Quantisierung und GPU/CPU‑Optimierung eine
+    Rolle.
+- chapter: Applications
+  id: u007
+  preview: true
+  speaker: narrator
+  text: Anwendungsfälle reichen von Audiobüchern über Assistenzsysteme bis zu dynamischer
+    Personalisation in Spielen. Unternehmen nutzen TTS für Voice‑UX, automatisierte
+    Ansagen und Darstellungen in verschiedenen Sprachen.
+- chapter: Ethics
+  id: u008
+  pause_after: 0.5
+  preview: true
+  speaker: host
+  text: Welche ethischen Probleme entstehen? Stimmenklau, Deepfakes, Missbrauch und
+    die Frage, wie Attribution und Kontrolle umgesetzt werden können.
+- chapter: Ethics
+  id: u009
+  preview: true
+  speaker: guest
+  text: 'Transparenz ist zentral: Nutzer sollten erkennen können, ob eine Stimme synthetisch
+    ist. Zudem brauchen wir Richtlinien zu Consent und sicheren Speichermethoden für
+    voice‑prints.'
+- chapter: Benefits
+  id: u010
+  preview: true
+  speaker: guest
+  text: Vorteile sind höhere Zugänglichkeit für Sehbehinderte, schnellere Content‑Produktion
+    und personalisierte Lerninhalte. KI kann auch als kreatives Werkzeug dienen.
+- chapter: Risks
+  id: u011
+  preview: true
+  speaker: host
+  text: Risiken sehen wir in Desinformation, Arbeitsplatzverschiebungen und möglichem
+    Missbrauch. Wichtig ist ein gesellschaftlicher Diskurs und technischer Schutzmechanismen.
+- chapter: Policy
+  id: u012
+  preview: true
+  speaker: guest
+  text: Regulierung kann helfen, aber sie muss technisch fundiert sein. Wir brauchen
+    Auditierbarkeit, Zugangskontrollen und klare rechtliche Rahmen für reproduzierte
+    Stimmen.
+- chapter: Future
+  id: u013
+  preview: true
+  speaker: narrator
+  text: 'Ein Blick nach vorn: Multimodale Modelle, bessere Prosodie‑Kontrolle, Unterstützung
+    für unterrepräsentierte Sprachen und effizientere Edge‑Deployments.'
+- chapter: Conclusion
+  id: u014
+  preview: true
+  speaker: host
+  text: 'Zum Abschluss: KI und TTS bieten große Chancen, aber wir müssen sie verantwortungsvoll
+    entwickeln. Danke an Dr. Anna Meier für die Einblicke.'
+- chapter: Outro
+  id: u015
+  preview: true
+  speaker: guest
+  text: Vielen Dank — bleiben Sie neugierig und kritisch gegenüber neuen Technologien.

@@ -47,6 +47,7 @@ class TTSEngine(Enum):
     BARK = "bark"  # Suno BARK (Natural + Emotions)
     VITS = "vits"  # VITS (Fast, Quality)
     PIPER = "piper"  # Piper (CPU, Fast)
+    DUMMY = "dummy"  # Local dummy engine for testing (sine wave)
     STYLETTS2 = "styletts2"  # StyleTTS2 (SOTA, 3s Cloning)
 
 
@@ -425,14 +426,39 @@ class PiperEngine(BaseTTSEngine):
             models_dir = _get_models_dir()
             local_candidate = models_dir / model_path
             if local_candidate.exists():
-                logger.info(f"Loading local Piper model from {local_candidate}")
-                load_target = str(local_candidate)
+                logger.info(f"Found local Piper model candidate at {local_candidate}")
+                # If the candidate is a directory, prefer a contained .onnx file or
+                # the onnx.json manifest if present. This helps when assets are
+                # downloaded into a subfolder (e.g. models/piper/<voice_key>/).
+                if local_candidate.is_dir():
+                    # search for .onnx first
+                    onnx_files = list(local_candidate.glob('*.onnx'))
+                    if onnx_files:
+                        load_target = str(onnx_files[0])
+                    else:
+                        # fallback to onnx.json manifest inside the folder
+                        json_files = list(local_candidate.glob('*.json'))
+                        if json_files:
+                            load_target = str(json_files[0])
+                        else:
+                            load_target = str(local_candidate)
+                else:
+                    load_target = str(local_candidate)
             else:
                 logger.info(f"Loading Piper model: {model_path}")
                 load_target = model_path
 
             self.model = PiperVoice.load(load_target)
-            self.sample_rate = 22050
+            # If the loaded PiperVoice exposes a config with sample_rate,
+            # prefer that so downstream WAV/ffmpeg uses the correct rate.
+            try:
+                self.sample_rate = int(getattr(self.model, 'config', {}).get('sample_rate', 22050))
+            except Exception:
+                # model.config may be an object, not a dict
+                try:
+                    self.sample_rate = int(getattr(self.model.config, 'sample_rate', 22050))
+                except Exception:
+                    self.sample_rate = 22050
             self.is_loaded = True
             logger.info("Piper loaded (CPU)")
 
@@ -466,7 +492,62 @@ class PiperEngine(BaseTTSEngine):
                 except Exception:
                     pass
 
-            audio = self.model.synthesize(text, speaker_id=int(speaker) if speaker.isdigit() else 0)
+            # Some Piper implementations expect the speaker id as a positional
+            # argument rather than a keyword. Pass it positionally to be
+            # compatible with multiple piper versions.
+            # Be permissive: if `speaker` is a numeric string, convert to int;
+            # otherwise pass the value through (some Piper versions accept
+            # non-int speaker descriptors). Guard against generators/iterables.
+            # Normalize speaker: protect against generators/iterables being
+            # passed in (these can come from caller mistakes). If speaker is
+            # an iterable but not a string/bytes, attempt to extract a single
+            # representative value (first element). Fall back to 0 on error.
+            try:
+                if isinstance(speaker, (list, tuple)) and len(speaker) > 0:
+                    speaker_val = speaker[0]
+                elif not isinstance(speaker, (str, bytes)) and hasattr(speaker, '__iter__'):
+                    try:
+                        speaker_val = next(iter(speaker))
+                    except Exception:
+                        speaker_val = speaker
+                else:
+                    speaker_val = speaker
+
+                if isinstance(speaker_val, (str, bytes)) and str(speaker_val).isdigit():
+                    spk = int(speaker_val)
+                else:
+                    spk = speaker_val
+            except Exception:
+                spk = 0
+
+            # Piper expects a SynthesisConfig (or similar) as second arg.
+            # If caller provided an int/str speaker id, create a SynthesisConfig
+            # with that speaker_id. If caller already passed a config-like
+            # object (has attribute speaker_id), pass it through.
+            try:
+                from piper.config import SynthesisConfig
+            except Exception:
+                SynthesisConfig = None
+
+            syn_cfg = None
+            if hasattr(spk, 'speaker_id'):
+                syn_cfg = spk
+            else:
+                # Try to build a SynthesisConfig when possible
+                try:
+                    if SynthesisConfig is not None:
+                        if isinstance(spk, (int,)):
+                            syn_cfg = SynthesisConfig(speaker_id=spk)
+                        elif isinstance(spk, (str, bytes)) and str(spk).isdigit():
+                            syn_cfg = SynthesisConfig(speaker_id=int(spk))
+                        else:
+                            syn_cfg = SynthesisConfig()
+                    else:
+                        syn_cfg = spk
+                except Exception:
+                    syn_cfg = spk
+
+            audio = self.model.synthesize(text, syn_cfg)
 
             # cooperative cancel after generation
             if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
@@ -480,14 +561,81 @@ class PiperEngine(BaseTTSEngine):
                 except Exception:
                     pass
 
-            # Piper returns List[int16], convert to float32
-            audio_array = np.array(audio, dtype=np.int16)
-            audio_float = audio_array.astype(np.float32) / 32768.0
+            # Piper may return a generator/iterable, bytes, numpy array, or
+            # a list of chunks. Materialize safely and handle common types.
 
+            def _materialize_and_convert(a):
+                """
+                Normalize different Piper outputs into a single float32 numpy
+                array in range [-1,1]. Supported forms:
+                - Iterable of AudioChunk-like objects (has attribute
+                  `audio_float_array`) -> concatenate their audio_float_array
+                - Iterable of numpy arrays or lists of ints/float -> concat
+                - bytes/bytearray representing int16 buffer -> convert
+                - single numpy array -> convert
+                """
+                # bytes/bytearray -> int16 buffer
+                if isinstance(a, (bytes, bytearray)):
+                    arr = np.frombuffer(a, dtype=np.int16)
+                    return arr.astype(np.float32) / 32768.0
+
+                # numpy array -> cast
+                if isinstance(a, np.ndarray):
+                    # If float32 already in [-1,1], assume it's ready
+                    if a.dtype == np.float32 or a.dtype == np.float64:
+                        return a.astype(np.float32)
+                    return a.astype(np.float32) / 32768.0
+
+                # Try to iterate and collect items
+                try:
+                    seq = list(a)
+                except Exception:
+                    raise TypeError("Unable to materialize audio from Piper output")
+
+                if not seq:
+                    return np.zeros(0, dtype=np.float32)
+
+                first = seq[0]
+
+                # AudioChunk-like objects (present in piper implementation)
+                if hasattr(first, 'audio_float_array'):
+                    parts = []
+                    for ch in seq:
+                        try:
+                            parts.append(np.asarray(getattr(ch, 'audio_float_array'), dtype=np.float32))
+                        except Exception:
+                            raise TypeError("AudioChunk elements lack audio_float_array or invalid format")
+                    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+
+                # If chunks are numpy arrays
+                if isinstance(first, np.ndarray):
+                    parts = [np.asarray(p, dtype=np.float32) for p in seq]
+                    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+
+                # If chunks are bytes (per-chunk), convert each
+                if isinstance(first, (bytes, bytearray)):
+                    parts = [np.frombuffer(p, dtype=np.int16) for p in seq]
+                    arr = np.concatenate(parts) if parts else np.zeros(0, dtype=np.int16)
+                    return arr.astype(np.float32) / 32768.0
+
+                # Fallback: assume sequence of numeric samples
+                try:
+                    arr = np.asarray(seq, dtype=np.float32)
+                    # If values look like int16 range, scale accordingly
+                    if arr.dtype != np.float32:
+                        arr = arr.astype(np.float32)
+                    if arr.size and np.max(np.abs(arr)) > 1.1:
+                        # Likely int16 range
+                        arr = arr / 32768.0
+                    return arr
+                except Exception:
+                    raise TypeError("Unable to convert Piper output to audio array")
+
+            audio_float = _materialize_and_convert(audio)
             return audio_float
 
         except Exception as e:
-            logger.error(f"Piper synthesis failed: {e}")
+            logger.exception("Piper synthesis failed")
             raise
 
     def unload(self):
@@ -554,6 +702,7 @@ class TTSEngineFactory:
         TTSEngine.XTTS: XTTSEngine,
         TTSEngine.BARK: BarkEngine,
         TTSEngine.PIPER: PiperEngine,
+        TTSEngine.DUMMY: None,  # will be filled later with DummyEngine
         TTSEngine.STYLETTS2: StyleTTS2Engine,
     }
 
@@ -862,3 +1011,78 @@ def get_engine_manager(max_engines: int = 2) -> TTSEngineManager:
     if _engine_manager is None:
         _engine_manager = TTSEngineManager(max_engines=max_engines)
     return _engine_manager
+
+
+# --- DummyEngine for offline testing -------------------------------------------------
+class DummyEngine(BaseTTSEngine):
+    """
+    Very small deterministic dummy TTS engine used for offline testing.
+
+    It generates a sine wave whose duration is derived from the text length so
+    the rest of the pipeline (wav writing, ffmpeg encoding, JSONL events) can be
+    exercised without real TTS models.
+    """
+
+    def load_model(self):
+        # No heavy model to load; mark as loaded and leave default sample_rate
+        logger.info("DummyEngine ready (no model load)")
+        self.sample_rate = 22050
+        self.is_loaded = True
+
+    def synthesize(self, text: str, speaker: str, **kwargs) -> np.ndarray:
+        import math
+
+        if not self.is_loaded:
+            raise RuntimeError("DummyEngine not loaded")
+
+        cancel_event = kwargs.get('cancel_event')
+        progress_cb = kwargs.get('progress_callback')
+
+        try:
+            if progress_cb:
+                try:
+                    progress_cb(0.0, 'start')
+                except Exception:
+                    pass
+
+            # Simple duration heuristic: 0.05s per character, clamp 0.2..8.0s
+            dur = max(0.2, min(8.0, 0.05 * len(text)))
+            sr = int(self.sample_rate)
+            t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+
+            # Use a base frequency that varies by speaker hash so different
+            # speakers produce different tones.
+            h = int(hashlib.sha1(str(speaker).encode()).hexdigest(), 16)
+            freq = 220 + (h % 220)
+
+            wave = 0.25 * np.sin(2 * math.pi * freq * t)
+
+            # simple amplitude envelope
+            env = np.minimum(1.0, (t * 5.0)) * np.minimum(1.0, (dur - t) * 5.0)
+            audio = (wave * env).astype(np.float32)
+
+            if progress_cb:
+                try:
+                    progress_cb(0.6, 'processing')
+                except Exception:
+                    pass
+                try:
+                    progress_cb(1.0, 'done')
+                except Exception:
+                    pass
+
+            return audio
+
+        except Exception as e:
+            logger.error(f"DummyEngine synthesis failed: {e}")
+            raise
+
+
+# Register DummyEngine into the factory mapping (monkey-patch the dict entry)
+try:
+    TTSEngineFactory._engine_classes[TTSEngine.DUMMY] = DummyEngine
+except Exception:
+    # If engine factory not yet defined or enum mutated unexpectedly,
+    # ignore the registration failure — it's non-fatal for existing flows.
+    pass
+

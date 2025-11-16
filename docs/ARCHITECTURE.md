@@ -289,6 +289,96 @@ Konsequenzen für Entwickler
 - Dokumentiere optionalen extras in `pyproject.toml` / `requirements.txt` (z. B. `[ebook]`, `[audio]`).
 - Implementiere End‑to‑end Tests, die dry‑run Modi nutzen (keine heavy native libs).
 
+---
+
+## 🔧 FFmpeg Installation & lokale Verifikation
+
+Für viele Audio‑Workflows (MP3/M4A Produktion, Streaming via ffmpeg stdin, pydub) wird eine native `ffmpeg`-Binary benötigt. Dieses Projekt bietet ein kleines Installer‑Skript und automatische Laufzeit-Integration, die das gebündelte `third_party/ffmpeg/bin` erkennt.
+
+Wichtig:
+
+Installer (empfohlen)
+
+PowerShell (Windows):
+```powershell
+python .\scripts\install_ffmpeg.py --dest .\third_party\ffmpeg\bin
+```
+
+Bash (Linux/macOS):
+```bash
+python3 scripts/install_ffmpeg.py --dest ./third_party/ffmpeg/bin
+```
+
+Verifikation (lokal)
+
+PowerShell:
+```powershell
+Get-Command ffmpeg -ErrorAction SilentlyContinue
+where.exe ffmpeg
+ffmpeg -version
+```
+
+Bash:
+```bash
+which ffmpeg
+ffmpeg -version
+```
+
+E2E‑Tests lokal ausführen
+
+PowerShell:
+```powershell
+# Installiere Abhängigkeiten falls nötig
+python -m pip install -r requirements.txt
+
+# E2E-Tests (nur die End-to-End Suite)
+python -m pytest -q tests/e2e -q
+```
+
+Hinweis zur CI / Runner‑Verifikation
+
+Fehlerbehebung
+
+---
+
+## 🔊 Spatial Preview & `scripts/` Utilities
+
+Das Repository enthält experimentelle Hilfs‑Skripte unter `scripts/`, um
+mono‑Utterances in räumliche Stereo‑Previews zu verwandeln (ILD/ITD,
+Distanz‑Absorption, optionale IR‑Convolution) und anschliessend normalisierte
+MP3/MP4 Previews zu erzeugen. Eine kompakte Bedienungs‑ und Integrationsanleitung
+findest du in `scripts/README.md`.
+
+Kurz: Für Preview‑Integration siehe `scripts/spatialize.py` und die
+programmatische Integration via `podcastforge.integrations.script_orchestrator.synthesize_script_preview(spatialize=True, ...)`.
+
+    - Existiert `third_party/ffmpeg/bin/ffmpeg(.exe)` lokal?
+    - Wurde das Projekt in einer Shell gestartet, nachdem `third_party` hinzugefügt wurde? (Neu starten / Shell neu öffnen)
+    - Führe `python .\scripts\install_ffmpeg.py --dest .\third_party\ffmpeg\bin --url <url>` aus, um ein alternatives Build zu verwenden.
+
+---
+
+### Verifikations-Log (Windows, lokal)
+
+Kurze Zusammenfassung eines lokalen Tests, der auf dem Entwickler‑Arbeitsplatz (Windows, PowerShell) ausgeführt wurde:
+
+- Ausgeführte Befehle (PowerShell):
+```powershell
+python .\scripts\install_ffmpeg.py --dest .\third_party\ffmpeg\bin
+where.exe ffmpeg
+ffmpeg -version
+python -m pytest -q tests/e2e -q
+```
+
+- Ergebnis:
+    - Das Installer‑Skript hat versucht, eine statische Build von `https://www.gyan.dev/ffmpeg/...` herunterzuladen, konnte aber kein passendes Paket extrahieren/finden (abhängig vom Mirror/URL kann das variieren).
+    - `ffmpeg` war in der Shell nicht als ausführbares Programm verfügbar (`where.exe ffmpeg` / `ffmpeg -version` schlugen fehl).
+    - Die E2E‑Tests liefen trotzdem lokal durch und beendeten sich erfolgreich (`....... [100%]`). Die Tests sind so geschrieben, dass ffmpeg‑spezifische Assertions übersprungen werden, wenn `ffmpeg` nicht gefunden wird.
+
+Hinweis: Falls du eine vollständige Streaming‑Validierung brauchst, stelle sicher, dass der Installer ein valides ffmpeg‑Archiv herunterladen und die Binärdatei korrekt nach `third_party/ffmpeg/bin` extrahieren kann, oder installiere `ffmpeg` über einen System‑Paketmanager (`choco`, `scoop`, `apt`, `brew`).
+
+
+
 
 ---
 

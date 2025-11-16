@@ -31,6 +31,11 @@ from ..integrations.script_orchestrator import synthesize_script_preview
 import tempfile
 import shutil
 from ..gui.threading_base import get_thread_manager
+from ..core.script_model import normalize_script
+from ..tts.engine_manager import get_engine_manager
+import uuid
+import soundfile as sf
+import tempfile as _tempfile
 
 
 class PodcastEditor:
@@ -367,6 +372,39 @@ class PodcastEditor:
         self.script_editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.script_editor.yview)
 
+        # Block view toggle and container (hidden until block view enabled)
+        toggle_frame = ttk.Frame(editor_frame)
+        toggle_frame.pack(fill=tk.X, pady=(4, 0))
+        self.block_view_var = tk.BooleanVar(value=False)
+        def _toggle_block_view():
+            if self.block_view_var.get():
+                # hide text editor and show block canvas
+                try:
+                    self.script_editor.pack_forget()
+                except Exception:
+                    pass
+                self.block_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+                self.block_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+                self.block_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+                self.render_blocks()
+            else:
+                try:
+                    self.block_container.pack_forget()
+                except Exception:
+                    pass
+                self.script_editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        ttk.Checkbutton(toggle_frame, text='Block View', variable=self.block_view_var, command=_toggle_block_view).pack(side=tk.LEFT, padx=6)
+
+        # Prepare block container but do not pack by default
+        self.block_container = ttk.Frame(editor_frame)
+        self.block_canvas = tk.Canvas(self.block_container, borderwidth=0, highlightthickness=0)
+        self.block_scroll = ttk.Scrollbar(self.block_container, orient=tk.VERTICAL, command=self.block_canvas.yview)
+        self.block_inner = ttk.Frame(self.block_canvas)
+        self.block_inner.bind('<Configure>', lambda e: self.block_canvas.configure(scrollregion=self.block_canvas.bbox('all')))
+        self.block_canvas.create_window((0,0), window=self.block_inner, anchor='nw')
+        self.block_canvas.configure(yscrollcommand=self.block_scroll.set)
+
         # Syntax-Highlighting Tags
         self.setup_syntax_tags()
 
@@ -617,6 +655,104 @@ class PodcastEditor:
         self.volume_scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.volume_scale.set(80)
 
+        # Near-realtime toggle: play utterances as they finish
+        self.near_realtime_var = tk.BooleanVar(value=False)
+        try:
+            nr = ttk.Checkbutton(control_frame, text='Near‑Realtime', variable=self.near_realtime_var)
+            nr.pack(side=tk.LEFT, padx=6)
+        except Exception:
+            # fallback if themed widget missing
+            cb = tk.Checkbutton(control_frame, text='Near‑Realtime', variable=self.near_realtime_var)
+            cb.pack(side=tk.LEFT, padx=6)
+
+        # Spatialize toggle + simple params (azimuth, distance)
+        self.spatialize_var = tk.BooleanVar(value=False)
+        try:
+            sp_cb = ttk.Checkbutton(control_frame, text='Spatialize', variable=self.spatialize_var)
+            sp_cb.pack(side=tk.LEFT, padx=6)
+        except Exception:
+            sp_cb = tk.Checkbutton(control_frame, text='Spatialize', variable=self.spatialize_var)
+            sp_cb.pack(side=tk.LEFT, padx=6)
+
+        # small param controls
+        self.spatial_az_var = tk.DoubleVar(value=0.0)
+        self.spatial_dist_var = tk.DoubleVar(value=1.0)
+        try:
+            ttk.Label(control_frame, text='Az:').pack(side=tk.LEFT, padx=(8,0))
+            az_entry = ttk.Entry(control_frame, width=6, textvariable=self.spatial_az_var)
+            az_entry.pack(side=tk.LEFT, padx=2)
+            ttk.Label(control_frame, text='Dist:').pack(side=tk.LEFT, padx=(6,0))
+            dist_entry = ttk.Entry(control_frame, width=6, textvariable=self.spatial_dist_var)
+            dist_entry.pack(side=tk.LEFT, padx=2)
+        except Exception:
+            pass
+
+        # Prosody controls: rate, pitch (cents), energy
+        self.prosody_rate_var = tk.DoubleVar(value=1.0)
+        self.prosody_pitch_var = tk.DoubleVar(value=0.0)
+        self.prosody_energy_var = tk.DoubleVar(value=1.0)
+        try:
+            ttk.Label(control_frame, text='Rate:').pack(side=tk.LEFT, padx=(8,0))
+            rate_entry = ttk.Entry(control_frame, width=6, textvariable=self.prosody_rate_var)
+            rate_entry.pack(side=tk.LEFT, padx=2)
+            ttk.Label(control_frame, text='Pitch(cents):').pack(side=tk.LEFT, padx=(6,0))
+            pitch_entry = ttk.Entry(control_frame, width=6, textvariable=self.prosody_pitch_var)
+            pitch_entry.pack(side=tk.LEFT, padx=2)
+            ttk.Label(control_frame, text='Energy:').pack(side=tk.LEFT, padx=(6,0))
+            energy_entry = ttk.Entry(control_frame, width=6, textvariable=self.prosody_energy_var)
+            energy_entry.pack(side=tk.LEFT, padx=2)
+        except Exception:
+            pass
+
+        # Insert breaths toggle
+        self.insert_breaths_var = tk.BooleanVar(value=False)
+        try:
+            b_cb = ttk.Checkbutton(control_frame, text='Insert Breaths', variable=self.insert_breaths_var)
+            b_cb.pack(side=tk.LEFT, padx=6)
+        except Exception:
+            cb = tk.Checkbutton(control_frame, text='Insert Breaths', variable=self.insert_breaths_var)
+            cb.pack(side=tk.LEFT, padx=6)
+        # Breath intensity slider
+        self.breath_intensity_var = tk.DoubleVar(value=0.5)
+        try:
+            ttk.Label(control_frame, text='Breath Int:').pack(side=tk.LEFT, padx=(6,0))
+            breath_slider = ttk.Scale(control_frame, from_=0.0, to=1.0, orient=tk.HORIZONTAL, variable=self.breath_intensity_var)
+            breath_slider.pack(side=tk.LEFT, padx=2)
+            ttk.Label(control_frame, textvariable=self.breath_intensity_var, width=4).pack(side=tk.LEFT, padx=(2,6))
+            # Breath presets combobox
+            self.breath_preset_var = tk.StringVar(value='Normal')
+            preset_combo = ttk.Combobox(control_frame, textvariable=self.breath_preset_var, values=['Subtle', 'Normal', 'Pronounced', 'Custom'], width=10, state='readonly')
+            preset_combo.pack(side=tk.LEFT, padx=(4,6))
+            # map presets to values
+            def _apply_preset(event=None):
+                mapping = {'Subtle': 0.25, 'Normal': 0.5, 'Pronounced': 0.85}
+                p = self.breath_preset_var.get()
+                if p in mapping:
+                    self.breath_intensity_var.set(mapping[p])
+                else:
+                    # Custom: leave current value
+                    pass
+
+            preset_combo.bind('<<ComboboxSelected>>', _apply_preset)
+            # when slider is moved manually, set preset to Custom if it no longer matches
+            def _on_slider_change(*args):
+                try:
+                    v = float(self.breath_intensity_var.get())
+                    if abs(v - 0.25) < 0.01:
+                        self.breath_preset_var.set('Subtle')
+                    elif abs(v - 0.5) < 0.01:
+                        self.breath_preset_var.set('Normal')
+                    elif abs(v - 0.85) < 0.01:
+                        self.breath_preset_var.set('Pronounced')
+                    else:
+                        self.breath_preset_var.set('Custom')
+                except Exception:
+                    pass
+
+            self.breath_intensity_var.trace_add('write', _on_slider_change)
+        except Exception:
+            pass
+
         # Status
         self.audio_status = ttk.Label(audio_frame, text="Bereit", foreground=self.colors["success"])
         self.audio_status.pack(pady=5)
@@ -624,6 +760,26 @@ class PodcastEditor:
         # Wellenform-Canvas (Platzhalter)
         self.waveform_canvas = tk.Canvas(audio_frame, bg=self.colors["editor_bg"], height=100)
         self.waveform_canvas.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        # Playlist (near-realtime queue)
+        playlist_frame = ttk.LabelFrame(audio_frame, text="Playlist (Near‑Realtime)", padding=6)
+        playlist_frame.pack(fill=tk.BOTH, expand=False, pady=(6,0))
+
+        self.playlist_listbox = tk.Listbox(playlist_frame, height=4)
+        self.playlist_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        pl_ctrl = ttk.Frame(playlist_frame)
+        pl_ctrl.pack(side=tk.LEFT, fill=tk.Y, padx=6)
+        ttk.Button(pl_ctrl, text="Skip", command=self._playlist_skip).pack(fill=tk.X, pady=2)
+        ttk.Button(pl_ctrl, text="Remove", command=self._playlist_remove).pack(fill=tk.X, pady=2)
+
+        # Crossfade control
+        cf_frame = ttk.Frame(audio_frame)
+        cf_frame.pack(fill=tk.X, pady=(6,0))
+        ttk.Label(cf_frame, text="Crossfade (s):").pack(side=tk.LEFT)
+        self.crossfade_seconds = tk.DoubleVar(value=0.5)
+        cf_slider = ttk.Scale(cf_frame, from_=0.0, to=2.0, variable=self.crossfade_seconds, orient=tk.HORIZONTAL)
+        cf_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
 
         # Podcast-Info
         info_frame = ttk.LabelFrame(parent, text="ℹ️ Podcast-Info", padding=10)
@@ -923,18 +1079,18 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
 
         self.update_speakers_list()
         self.update_info()
-
-    # ========== Editor-Funktionen ==========
-
-    def on_text_change(self, event=None):
-        """Wird bei Text-Änderung aufgerufen"""
-        self.apply_syntax_highlighting()
-        self.update_line_numbers()
-        self.update_cursor_position()
-        self.update_info()
-
-    def on_modified(self, event=None):
-        """Wird bei Änderung aufgerufen"""
+        # If structured script present, normalize into blocks and render
+        try:
+            blocks = normalize_script(data)
+            if blocks:
+                self.script_data = blocks
+                try:
+                    if getattr(self, 'block_view_var', tk.BooleanVar(value=False)).get():
+                        self.render_blocks()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         if self.script_editor.edit_modified():
             self.is_modified = True
             self.script_editor.edit_modified(False)
@@ -1476,6 +1632,31 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         self.audio_status.config(text="Gestoppt ⏸️", foreground=self.colors["warning"])
         self.update_status("Wiedergabe gestoppt")
 
+    def _playlist_skip(self):
+        """Skip current item by stopping playback; queue worker will continue."""
+        try:
+            self.audio_player.stop()
+            # remove first item in listbox
+            try:
+                if self.playlist_listbox.size() > 0:
+                    self.playlist_listbox.delete(0)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _playlist_remove(self):
+        """Remove selected playlist item without playing."""
+        try:
+            sel = self.playlist_listbox.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            self.playlist_listbox.delete(idx)
+            # Note: For simplicity we don't remove from internal queue; queue will skip when popped if file missing
+        except Exception:
+            pass
+
     def open_generate_dialog(self):
         """Open the Generate Project dialog (skeleton)."""
         dlg = GenerateProjectDialog(self.root)
@@ -1538,6 +1719,12 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                 max_workers=cfg.get('max_workers', 2),
                 cache_dir=str(Path(out_dir) / 'cache'),
                 cancel_event=self._generation_cancel_event,
+                spatialize=bool(getattr(self, 'spatialize_var', tk.BooleanVar(value=False)).get()),
+                spatial_params={'default': {'azimuth': float(getattr(self, 'spatial_az_var', tk.DoubleVar(value=0.0)).get()), 'distance': float(getattr(self, 'spatial_dist_var', tk.DoubleVar(value=1.0)).get())}},
+                spatial_target_sr=44100,
+                prosody={'rate': float(getattr(self, 'prosody_rate_var', tk.DoubleVar(value=1.0)).get()), 'pitch_cents': float(getattr(self, 'prosody_pitch_var', tk.DoubleVar(value=0.0)).get()), 'energy': float(getattr(self, 'prosody_energy_var', tk.DoubleVar(value=1.0)).get())},
+                insert_breaths=bool(getattr(self, 'insert_breaths_var', tk.BooleanVar(value=False)).get()),
+                breath_intensity=float(getattr(self, 'breath_intensity_var', tk.DoubleVar(value=0.5)).get()),
             )
 
             if res.get('ok'):
@@ -1692,8 +1879,55 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                                                 pb['value'] = max(0, min(100, int(p*100)))
                                         except Exception:
                                             pass
+                                # If near-realtime is enabled and this utterance finished, play it
+                                try:
+                                    if self.near_realtime_var.get() and status == 'done':
+                                        f = data.get('file')
+                                        spk = data.get('speaker')
+                                        # If a speaker filter is active, only play matching speaker
+                                        try:
+                                            current_speaker = (self.prop_speaker.get() or '').strip()
+                                        except Exception:
+                                            current_speaker = ''
+
+                                        if f:
+                                            # If speaker filter is set and doesn't match, skip
+                                            if current_speaker and spk and current_speaker != spk:
+                                                pass
+                                            else:
+                                                try:
+                                                    # enqueue into playlist so crossfade/queueing works
+                                                    self.audio_player.enqueue(Path(f), crossfade_sec=self.crossfade_seconds.get())
+                                                    # update UI playlist listbox
+                                                    try:
+                                                        display = f"{spk}: {Path(f).name}"
+                                                        self.playlist_listbox.insert(tk.END, display)
+                                                    except Exception:
+                                                        pass
+                                                except Exception:
+                                                    # fallback to immediate play
+                                                    try:
+                                                        self.audio_player.play(Path(f))
+                                                    except Exception:
+                                                        pass
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
+                        # update playlist UI when utterance removed/finished
+                        try:
+                            if status in ('done', 'failed', 'cancelled'):
+                                # remove first matching item from playlist listbox if present
+                                try:
+                                    for i in range(self.playlist_listbox.size()):
+                                        val = self.playlist_listbox.get(i)
+                                        if data.get('file') and Path(val.split(': ')[-1]).name == Path(data.get('file')).name:
+                                            self.playlist_listbox.delete(i)
+                                            break
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
@@ -1967,7 +2201,19 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                     except Exception:
                         pass
 
-                    res = synthesize_script_preview(str(script_path), out_dir, engine=engine_choice, max_workers=1, cache_dir=str(Path(out_dir)/'cache'))
+                    res = synthesize_script_preview(
+                        str(script_path),
+                        out_dir,
+                        engine=engine_choice,
+                        max_workers=1,
+                        cache_dir=str(Path(out_dir)/'cache'),
+                        spatialize=bool(getattr(self, 'spatialize_var', tk.BooleanVar(value=False)).get()),
+                        spatial_params={'default': {'azimuth': float(getattr(self, 'spatial_az_var', tk.DoubleVar(value=0.0)).get()), 'distance': float(getattr(self, 'spatial_dist_var', tk.DoubleVar(value=1.0)).get())}},
+                        spatial_target_sr=44100,
+                        prosody={'rate': float(getattr(self, 'prosody_rate_var', tk.DoubleVar(value=1.0)).get()), 'pitch_cents': float(getattr(self, 'prosody_pitch_var', tk.DoubleVar(value=0.0)).get()), 'energy': float(getattr(self, 'prosody_energy_var', tk.DoubleVar(value=1.0)).get())},
+                        insert_breaths=bool(getattr(self, 'insert_breaths_var', tk.BooleanVar(value=False)).get()),
+                        breath_intensity=float(getattr(self, 'breath_intensity_var', tk.DoubleVar(value=0.5)).get()),
+                    )
                     if res.get('ok'):
                         self.root.after(0, lambda: self._progress_tree.set(self._progress_map[idx], 'status', 'done'))
                         message = 'Retry successful'

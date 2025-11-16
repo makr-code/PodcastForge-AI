@@ -14,6 +14,7 @@ import json
 import hashlib
 import time
 import wave
+import os
 
 import numpy as np
 
@@ -45,6 +46,22 @@ def _write_wav(path: Path, audio: np.ndarray, sample_rate: int) -> None:
     int16 = (clipped * 32767).astype('int16')
     with wave.open(str(path), 'wb') as wf:
         wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(int(sample_rate))
+        wf.writeframes(int16.tobytes())
+
+
+def _write_stereo_wav(path: Path, audio: np.ndarray, sample_rate: int) -> None:
+    arr = np.asarray(audio)
+    if arr.ndim == 1:
+        arr = np.stack([arr, arr], axis=1)
+    # expect shape (N,2)
+    if arr.ndim == 2 and arr.shape[1] == 1:
+        arr = np.repeat(arr, 2, axis=1)
+    clipped = np.clip(arr, -1.0, 1.0)
+    int16 = (clipped * 32767).astype('int16')
+    with wave.open(str(path), 'wb') as wf:
+        wf.setnchannels(2)
         wf.setsampwidth(2)
         wf.setframerate(int(sample_rate))
         wf.writeframes(int16.tobytes())
@@ -93,6 +110,13 @@ def synthesize_script_preview(
     cancel_event: Optional[threading.Event] = None,
     output_format: str = 'mp4',
     audio_bitrate: str = '192k',
+    on_progress: Optional[callable] = None,
+    spatialize: bool = False,
+    spatial_params: Optional[Dict] = None,
+    spatial_target_sr: int = 44100,
+    prosody: Optional[Dict] = None,
+    insert_breaths: bool = False,
+    breath_intensity: float = 0.5,
 ) -> Dict:
     """Render a script (JSON/YAML) into per-utterance WAV previews and a combined preview.
 
@@ -175,7 +199,7 @@ def synthesize_script_preview(
                         if p > 1.0:
                             p = 1.0
 
-                        payload = {'task_id': task_id, 'idx': idx, 'progress': p}
+                        payload = {'task_id': task_id, 'idx': idx, 'progress': p, 'speaker': voice}
                         if stage is not None:
                             payload['stage'] = stage
 
@@ -253,13 +277,41 @@ def synthesize_script_preview(
                     except Exception:
                         engine_type = None
 
+                    # Prepare synth kwargs and adapt generic prosody to engine-specific names
+                    synth_kwargs = {'cancel_event': cancel_event, 'progress_callback': engine_progress}
+                    if prosody:
+                        try:
+                            from ..tts.prosody_adapters import adapt_for_engine
+
+                            adapted = adapt_for_engine(engine_type, prosody)
+                            if isinstance(adapted, dict):
+                                synth_kwargs.update(adapted)
+                        except Exception:
+                            # if adapter fails, continue and pass raw prosody below
+                            pass
+
+                    # Call manager.synthesize; include raw prosody for engines that expect it
                     audio, sr = manager.synthesize(
                         text,
                         voice,
                         engine_type=engine_type,
-                        cancel_event=cancel_event,
-                        progress_callback=engine_progress,
+                        prosody=prosody,
+                        **synth_kwargs,
                     )
+
+                    # Optional breath insertion postprocessing (applied before writing cache)
+                    if insert_breaths:
+                        try:
+                            from ..audio.postprocessors.breaths import insert_breaths as _insert_breaths_fn
+
+                            try:
+                                # use explicit breath_intensity if provided, else fall back to prosody energy
+                                intensity = float(breath_intensity) if breath_intensity is not None else (prosody.get('energy', 1.0) if isinstance(prosody, dict) else 1.0)
+                                audio = _insert_breaths_fn(audio, sr, text, intensity=float(intensity))
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
 
                     # If cancel requested after synthesis, mark as cancelled (best-effort)
                     if cancel_event is not None and cancel_event.is_set():
@@ -286,7 +338,7 @@ def synthesize_script_preview(
 
                     # publish failure
                     try:
-                        get_event_bus().publish('script.tts_progress', {'task_id': task_id, 'idx': idx, 'status': 'failed'})
+                        get_event_bus().publish('script.tts_progress', {'task_id': task_id, 'idx': idx, 'status': 'failed', 'file': str(cached_file), 'speaker': voice})
                     except Exception:
                         pass
                     raise
@@ -297,7 +349,7 @@ def synthesize_script_preview(
                     pass
 
                 try:
-                    get_event_bus().publish('script.tts_progress', {'task_id': task_id, 'idx': idx, 'status': 'done'})
+                    get_event_bus().publish('script.tts_progress', {'task_id': task_id, 'idx': idx, 'status': 'done', 'file': str(cached_file), 'speaker': voice})
                 except Exception:
                     pass
 
@@ -309,7 +361,9 @@ def synthesize_script_preview(
 
         def _run_task(fn, tid):
             # wrapper to call the task function with expected signature
-            return fn(task_id=tid, progress_callback=None)
+            # forward the global on_progress callback into each task so
+            # external callers (CLI/UI) receive per-utterance events.
+            return fn(task_id=tid, progress_callback=on_progress)
 
         for idx, text, voice, cached_file in to_synth:
             tid = f"s{idx:03d}"
@@ -335,6 +389,60 @@ def synthesize_script_preview(
 
         executor.shutdown(wait=True)
 
+        # Optional spatialization step: if requested, load the scripts/spatialize.py
+        # module dynamically and spatialize each cached mono utterance into a
+        # stereo 44.1k WAV which will then be used for preview assembly.
+        if spatialize:
+            try:
+                import importlib.util
+                spec_path = Path(os.getcwd()) / 'scripts' / 'spatialize.py'
+                if spec_path.exists():
+                    spec = importlib.util.spec_from_file_location('spatialize_module', str(spec_path))
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    spatialize_fn = getattr(mod, 'spatialize_mono_to_stereo')
+                else:
+                    spatialize_fn = None
+            except Exception:
+                spatialize_fn = None
+
+            if spatialize_fn is None:
+                try:
+                    get_event_bus().publish('script.preview_ready', {'preview': None, 'clips': [c for c in clips], 'warning': 'spatialize requested but spatialize script not found or failed to load'})
+                except Exception:
+                    pass
+            else:
+                sp_params = spatial_params or {}
+                per_speaker = sp_params.get('per_speaker', {})
+                per_idx = sp_params.get('per_idx', {})
+                default = sp_params.get('default', {})
+                # iterate clips and create stereo cached versions
+                for c in clips:
+                    try:
+                        src = Path(c['file'])
+                        if not src.exists():
+                            continue
+                        # determine params: idx, speaker overrides, else default
+                        p = default.copy() if isinstance(default, dict) else {}
+                        p.update(per_speaker.get(c.get('speaker', ''), {}))
+                        p.update(per_idx.get(str(c.get('idx')), {}))
+                        az = p.get('azimuth', 0.0)
+                        dist = p.get('distance', 1.0)
+                        itd = p.get('itd_ms_max', 0.75)
+                        irl = p.get('ir_left')
+                        irr = p.get('ir_right')
+                        out_stereo = Path(cache) / f"{src.stem}.stereo.wav"
+                        stereo_arr, sr = spatialize_fn(str(src), azimuth=float(az), distance=float(dist), itd_ms_max=float(itd), ir_left=irl, ir_right=irr, target_sr=int(spatial_target_sr))
+                        # write stereo WAV
+                        _write_stereo_wav(out_stereo, stereo_arr, sr)
+                        c['file'] = str(out_stereo)
+                        c['spatialized'] = True
+                    except Exception as e:
+                        try:
+                            get_event_bus().publish('script.tts_progress', {'task_id': f'spatial_{c.get("idx")}', 'idx': c.get('idx'), 'status': 'failed', 'error': str(e)})
+                        except Exception:
+                            pass
+
     # All clips available, build combined preview or stream into encoder
     ordered_files = [Path(c['file']) for c in clips]
     final_preview = None
@@ -350,7 +458,9 @@ def synthesize_script_preview(
         from ..audio.ffmpeg_pipe import start_ffmpeg_encoder, feed_wav_to_pipe, find_ffmpeg
 
         out_path = out / f'script_preview.{fmt}'
-        ffmpeg_bin = shutil.which('ffmpeg') or shutil.which('ffmpeg.exe')
+        # prefer find_ffmpeg() which also ensures bundled third_party/ffmpeg/bin
+        # is considered (it will prepend to PATH if the repo contains it)
+        ffmpeg_bin = find_ffmpeg()
         if ffmpeg_bin is None:
             # No ffmpeg available — fall back to WAV+warning
             preview = out / 'script_preview.wav'

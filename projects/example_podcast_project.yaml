@@ -1,0 +1,137 @@
+project_id: example_podcast_technical_001
+title: "TTS & KI: Technik, Chancen und Verantwortung — Episode 1"
+author: "PodcastForge Research"
+description: >
+  Eine technische Diskussionsfolge über die aktuellen Fortschritte in TTS und KI, ihre
+  Auswirkungen auf Gesellschaft und Arbeit sowie Chancen, Risiken und ethische Fragen.
+  Dieses Projekt dient als ausführliches Testskript für die Synthese‑Pipeline, Preview‑UI
+  und per‑Utterance Event‑Handling.
+sample_rate: 22050
+output_format: mp3
+engine: PIPER
+near_realtime: true
+
+speakers:
+  - id: narrator
+    name: "Erzähler"
+    voice: "piper_narrator"
+    preferred_engine: PIPER
+
+  - id: host
+    name: "Moderator"
+    voice: "piper_host"
+    preferred_engine: PIPER
+
+  - id: guest
+    name: "Dr. Anna Meier (KI‑Expertin)"
+    voice: "piper_guest_female"
+    preferred_engine: PIPER
+
+script:
+  - id: u001
+    chapter: "Intro"
+    speaker: narrator
+    text: "Willkommen zur ersten Episode von ‚TTS & KI: Technik, Chancen und Verantwortung‘. In dieser Folge sprechen wir über die technischen Grundlagen von Text‑to‑Speech, aktuelle Fortschritte in KI‑Modellen und welche Auswirkungen diese Technologien auf Arbeit und Gesellschaft haben können."
+    preview: true
+    pause_after: 0.6
+
+  - id: u002
+    chapter: "Intro"
+    speaker: host
+    text: "Ich bin euer Moderator. Heute zu Gast: Dr. Anna Meier, Forscherin im Bereich Sprachsynthese. Wir beginnen mit den Grundlagen: Was genau ist TTS, und wie haben sich die Modelle in den letzten Jahren verändert?"
+    preview: true
+    pause_after: 0.4
+
+  - id: u003
+    chapter: "Background"
+    speaker: guest
+    text: "Text‑to‑Speech, kurz TTS, übersetzt geschriebenen Text in gesprochenes Audio. Früher nutzte man regelbasierte Systeme oder unit‑selection; heute dominieren neuronale Netze und Transformer‑basierte Modelle, die deutlich natürlichere Stimmen erzeugen."
+    preview: true
+    emotion: neutral
+    speed_hint: 1.0
+
+  - id: u004
+    chapter: "Background"
+    speaker: guest
+    text: "Wichtige Bausteine sind dabei Sprach‑Encoder, Prosodie‑Modelle und Vocoder. Neuere Ansätze erlauben außerdem Anpassungen von Stil, Emotionalität und Sprechtempo per Conditioning."
+    preview: true
+    pause_after: 0.3
+
+  - id: u005
+    chapter: "Technical Deep Dive"
+    speaker: host
+    text: "Können wir kurz die Architektur skizzieren: Encoder, Prosodie‑Netzwerk, Autoregressive vs. non‑autoregressive Vocoder? Was sind die Trade‑offs in Latenz und Qualität?"
+    preview: true
+
+  - id: u006
+    chapter: "Technical Deep Dive"
+    speaker: guest
+    text: "Autoregressive Modelle liefern oft sehr natürliche Prosodie, sind aber langsamer. Non‑autoregressive Modelle bieten geringere Latenz und werden zunehmend leistungsfähiger. In Produktionssettings spielen auch Quantisierung und GPU/CPU‑Optimierung eine Rolle."
+    preview: true
+    speed_hint: 0.98
+
+  - id: u007
+    chapter: "Applications"
+    speaker: narrator
+    text: "Anwendungsfälle reichen von Audiobüchern über Assistenzsysteme bis zu dynamischer Personalisation in Spielen. Unternehmen nutzen TTS für Voice‑UX, automatisierte Ansagen und Darstellungen in verschiedenen Sprachen."
+    preview: true
+
+  - id: u008
+    chapter: "Ethics"
+    speaker: host
+    text: "Welche ethischen Probleme entstehen? Stimmenklau, Deepfakes, Missbrauch und die Frage, wie Attribution und Kontrolle umgesetzt werden können."
+    preview: true
+    pause_after: 0.5
+
+  - id: u009
+    chapter: "Ethics"
+    speaker: guest
+    text: "Transparenz ist zentral: Nutzer sollten erkennen können, ob eine Stimme synthetisch ist. Zudem brauchen wir Richtlinien zu Consent und sicheren Speichermethoden für voice‑prints."
+    preview: true
+
+  - id: u010
+    chapter: "Benefits"
+    speaker: guest
+    text: "Vorteile sind höhere Zugänglichkeit für Sehbehinderte, schnellere Content‑Produktion und personalisierte Lerninhalte. KI kann auch als kreatives Werkzeug dienen."
+    preview: true
+
+  - id: u011
+    chapter: "Risks"
+    speaker: host
+    text: "Risiken sehen wir in Desinformation, Arbeitsplatzverschiebungen und möglichem Missbrauch. Wichtig ist ein gesellschaftlicher Diskurs und technischer Schutzmechanismen."
+    preview: true
+
+  - id: u012
+    chapter: "Policy"
+    speaker: guest
+    text: "Regulierung kann helfen, aber sie muss technisch fundiert sein. Wir brauchen Auditierbarkeit, Zugangskontrollen und klare rechtliche Rahmen für reproduzierte Stimmen."
+    preview: true
+
+  - id: u013
+    chapter: "Future"
+    speaker: narrator
+    text: "Ein Blick nach vorn: Multimodale Modelle, bessere Prosodie‑Kontrolle, Unterstützung für unterrepräsentierte Sprachen und effizientere Edge‑Deployments."
+    preview: true
+
+  - id: u014
+    chapter: "Conclusion"
+    speaker: host
+    text: "Zum Abschluss: KI und TTS bieten große Chancen, aber wir müssen sie verantwortungsvoll entwickeln. Danke an Dr. Anna Meier für die Einblicke."
+    preview: true
+
+  - id: u015
+    chapter: "Outro"
+    speaker: guest
+    text: "Vielen Dank — bleiben Sie neugierig und kritisch gegenüber neuen Technologien."
+    preview: true
+
+background:
+  music: "projects/assets/sample_bed.mp3"
+  level_db: -18.0
+
+settings:
+  crossfade_seconds: 1.0
+  normalize: true
+  loudness_target: -16.0
+  per_utterance_fade: true
+

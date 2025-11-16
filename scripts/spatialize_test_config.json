@@ -1,0 +1,21 @@
+{
+  "outputs_dir": "out/example/spatial_batch",
+  "speakers": [
+    {
+      "name": "host",
+      "utterances": ["out/example/cache/248c1d3ad800e7c459aa045f19afd29118a22ae5499c709080d9a34341d881af.wav"],
+      "azimuth": -30,
+      "distance": 1.0
+    },
+    {
+      "name": "guest",
+      "utterances": ["out/example/cache/2f86d8889ae855e06de73ccb5878c50ba188bf577b9a06ac03d09ea7afe62ca4.wav"],
+      "azimuth": 30,
+      "distance": 1.2
+    }
+  ],
+  "master_wav": "out/example/spatial_batch_master.wav",
+  "master_normalized": "out/example/spatial_batch_master_norm.mp3",
+  "normalize_lufs": -16
+}
+

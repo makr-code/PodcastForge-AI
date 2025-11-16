@@ -47,6 +47,9 @@ cache/
 logs/
 *.log
 
+# Bundled third-party binaries (ffmpeg etc.)
+third_party/
+
 # ebook2audiobook submodule
 ebook2audiobook/
 

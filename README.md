@@ -131,17 +131,50 @@ docker-compose exec podcastforge generate \
     --duration 10
 ```
 
+## 🖥️ CLI Referenz
+
+### Alle verfügbaren Befehle
+
+```bash
+# GUI Editor starten
+podcastforge edit [datei]              # Neues Projekt oder vorhandene Datei öffnen
+
+# Podcast generieren
+podcastforge generate \
+    --topic "Thema" \
+    --style discussion \
+    --duration 15 \
+    --llm mistral \
+    --language de \
+    --output podcast.mp3
+
+# Aus vorhandenem Skript generieren
+podcastforge from-script script.json --output podcast.mp3
+
+# Voice Library durchsuchen
+podcastforge voices \
+    --language de \
+    --gender male \
+    --style professional
+
+# TTS-Test durchführen
+podcastforge test
+
+# Verfügbare Ollama Models anzeigen
+podcastforge models
+```
+
 ## 📖 Dokumentation
 
-- [Installation Guide](docs/guides/installation.md)
-- [Erste Schritte](docs/guides/getting-started.md)
-- [LLM Konfiguration](docs/guides/llm-config.md)
-- [Voice Cloning](docs/guides/voice-cloning.md)
-- [API Referenz](docs/api/README.md)
+- [Setup & Installation](SETUP.md)
+- [Editor Guide](docs/EDITOR_GUIDE.md)
+- [Voice Integration](docs/VOICE_INTEGRATION.md)
+- [Architektur](docs/ARCHITECTURE.md)
+- [Dokumentations-Index](docs/README.md)
 - [Beispiele](examples/)
- - [Copilot Introduction](./.github/indroduction)  
-     (Kurzanleitung für automatisierte Assistenz; bitte bei automatischen Änderungen beachten)
- - [Dokumentationspflicht / ToDo-Vorlage](docs/todo.md)
+- [Copilot Introduction](./.github/indroduction)  
+  (Kurzanleitung für automatisierte Assistenz; bitte bei automatischen Änderungen beachten)
+- [Dokumentationspflicht / ToDo-Vorlage](docs/todo.md)
 
 ## 🛠️ Architektur
 
@@ -182,11 +215,14 @@ make lint
 - [x] Ollama LLM Integration
 - [x] Multi-Speaker Support
 - [x] Docker Support
+- [x] Voice Cloning mit eigenen Stimmen
+- [x] Batch-Processing für Podcast-Serien (Script Orchestrator)
+- [x] Timeline Editor
+- [x] Multitrack Editor
+- [x] 4 TTS Engines (XTTS, Bark, Piper, StyleTTS2)
 - [ ] Web-Interface (Gradio/Streamlit)
-- [ ] Voice Cloning mit eigenen Stimmen
 - [ ] RSS-Feed Integration für News-Podcasts
-- [ ] Batch-Processing für Podcast-Serien
-- [ ] Real-time Streaming
+- [ ] Real-time Streaming (FFmpeg Pipe teilweise implementiert)
 - [ ] Cloud-Deployment (AWS/GCP)
 
 ## 📄 Lizenz

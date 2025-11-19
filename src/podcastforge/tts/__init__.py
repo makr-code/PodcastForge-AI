@@ -15,3 +15,4 @@ __all__ = [
     "BaseTTSEngine",
     "TTSEngineFactory",
 ]
+__all__.extend(["discover_local_piper_models", "discover_local_hf_repo"]) 

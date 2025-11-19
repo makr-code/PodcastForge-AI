@@ -35,6 +35,62 @@ def _get_models_dir() -> Path:
     return repo_root / "models"
 
 
+def discover_local_piper_models(models_dir: Optional[Path] = None) -> Dict[str, Path]:
+    """Finde lokal heruntergeladene Piper-Modelle unter `models/piper/`.
+
+    Returns a mapping voice_key -> Path (either file or folder).
+    """
+    models_dir = models_dir or _get_models_dir()
+    piper_dir = models_dir / "piper"
+    found = {}
+    if not piper_dir.exists():
+        return found
+
+    # scan subfolders first
+    for entry in sorted(piper_dir.iterdir()):
+        try:
+            if entry.is_dir():
+                # prefer directories as voice containers
+                # accept if contains any file
+                has_files = any(entry.iterdir())
+                if has_files:
+                    found[entry.name] = entry
+                    continue
+
+            # handle file entries like de_DE-thorsten-high.onnx present directly
+            if entry.is_file():
+                name = entry.stem
+                # prefer existing mapping to directory if present
+                if name not in found:
+                    found[name] = entry
+        except Exception:
+            continue
+
+    return found
+
+
+def discover_local_hf_repo(repo_id: str, models_dir: Optional[Path] = None) -> List[Path]:
+    """Try to locate a snapshot-downloaded HF repo under `models/`.
+
+    Returns list of matching snapshot root paths.
+    """
+    models_dir = models_dir or _get_models_dir()
+    norm = repo_id.replace('/', '-').replace('/', '_')
+    candidates = []
+    if not models_dir.exists():
+        return candidates
+
+    for entry in models_dir.iterdir():
+        try:
+            name = entry.name.lower()
+            if repo_id.replace('/', '_') in name or repo_id.replace('/', '-') in name or repo_id.replace('/', '--') in name:
+                candidates.append(entry)
+        except Exception:
+            continue
+
+    return candidates
+
+
 class CancelledError(Exception):
     """Raised when a synth operation was cancelled cooperatively."""
     pass
@@ -766,6 +822,13 @@ class TTSEngineManager:
         self._lock = threading.RLock()
 
         logger.info(f"TTSEngineManager initialized (max_engines={max_engines})")
+        # discover local Piper models for convenience and logging
+        try:
+            piper_models = discover_local_piper_models()
+            if piper_models:
+                logger.info(f"Discovered {len(piper_models)} local Piper models: {', '.join(sorted(piper_models.keys()))}")
+        except Exception:
+            pass
 
     def get_engine(
         self, engine_type: TTSEngine, config: Optional[Dict] = None, auto_load: bool = True
@@ -983,6 +1046,7 @@ class TTSEngineManager:
                 "loaded_engines": list(self.loaded_engines.keys()),
                 "usage": self.engine_usage.copy(),
                 "total_memory": total_memory,
+                "local_piper_models": list(discover_local_piper_models().keys()),
             }
 
     def __repr__(self) -> str:

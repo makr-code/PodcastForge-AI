@@ -268,7 +268,7 @@ class PodcastEditor:
             filter_frame, textvariable=self.lang_var, values=["de", "en"], width=8
         )
         lang_combo.pack(side=tk.LEFT, padx=5)
-        lang_combo.bind("<<ComboboxSelected>>", self.update_voice_list)
+        lang_combo.bind("<<ComboboxSelected>>", lambda e: self.update_voice_list(e))
 
         ttk.Label(filter_frame, text="Stil:").pack(side=tk.LEFT)
         self.style_var = tk.StringVar(value="")
@@ -279,7 +279,7 @@ class PodcastEditor:
             width=12,
         )
         style_combo.pack(side=tk.LEFT, padx=5)
-        style_combo.bind("<<ComboboxSelected>>", self.update_voice_list)
+        style_combo.bind("<<ComboboxSelected>>", lambda e: self.update_voice_list(e))
 
         # Voice-Liste
         voice_list_frame = ttk.Frame(voice_frame)
@@ -297,6 +297,29 @@ class PodcastEditor:
         )
         self.voice_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         voice_scrollbar.config(command=self.voice_listbox.yview)
+        # Populate with local Piper models if present for quick access
+        try:
+            from ..tts import discover_local_piper_models
+
+            piper_models = discover_local_piper_models()
+            if piper_models:
+                # Insert a header-like entry
+                self.voice_listbox.insert(tk.END, "-- Local Piper Models --")
+                for vk in sorted(piper_models.keys()):
+                    self.voice_listbox.insert(tk.END, f"PIPER: {vk}")
+        except Exception:
+            pass
+            # Context menu for voice entries and drag-and-drop support
+            self.voice_listbox.bind('<Button-3>', self._on_voice_right_click)
+            self.voice_listbox.bind('<ButtonPress-1>', self._on_voice_press)
+            # speakers_listbox drop handler
+            try:
+                self.speakers_listbox.bind('<ButtonRelease-1>', self._on_speakers_drop)
+            except Exception:
+                pass
+
+            # internal drag payload
+            self._drag_payload = None
 
         self.update_voice_list()
 
@@ -333,7 +356,7 @@ class PodcastEditor:
             width=12,
         )
         format_combo.pack(side=tk.RIGHT)
-        format_combo.bind("<<ComboboxSelected>>", self.update_editor_view)
+        format_combo.bind("<<ComboboxSelected>>", lambda e: self.update_editor_view(e))
 
         # Editor mit Syntax-Highlighting
         editor_frame = ttk.Frame(parent)
@@ -417,11 +440,11 @@ class PodcastEditor:
         self._drag_highlight_line = None
 
         # Bindings
-        self.script_editor.bind("<KeyRelease>", self.on_text_change)
+        self.script_editor.bind("<KeyRelease>", lambda e: getattr(self, 'on_text_change', lambda ev: None)(e))
         self.script_editor.bind("<Control-Return>", lambda e: self.insert_line())
-        self.script_editor.bind("<<Modified>>", self.on_modified)
+        self.script_editor.bind("<<Modified>>", lambda e: getattr(self, 'on_modified', lambda ev: None)(e))
         # Allow dropping a voice onto the editor (mouse release triggers drop)
-        self.script_editor.bind('<ButtonRelease-1>', self._voice_drop_on_editor)
+        self.script_editor.bind('<ButtonRelease-1>', lambda e: getattr(self, '_voice_drop_on_editor', lambda ev: None)(e))
         # Ensure widget supports undo for drag/drop recover
         try:
             self.script_editor.config(undo=True, maxundo=-1)
@@ -1001,7 +1024,45 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         """Speichere zu Datei"""
         try:
             content = self.script_editor.get("1.0", tk.END)
-            filepath.write_text(content, encoding="utf-8")
+
+            # If YAML/JSON structured project, try to embed speaker->voice mapping
+            try:
+                if filepath.suffix in ('.yaml', '.yml') or self.format_var.get() == 'yaml':
+                    data = yaml.safe_load(content) if content.strip() else {}
+                    if isinstance(data, dict) and 'speakers' in data and hasattr(self, '_speaker_models'):
+                        for s in data['speakers']:
+                            name = s.get('name')
+                            if name and name in self._speaker_models:
+                                s['voice'] = self._speaker_models.get(name)
+                        # dump back to YAML
+                        new_content = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+                        filepath.write_text(new_content, encoding='utf-8')
+                    else:
+                        filepath.write_text(content, encoding='utf-8')
+                elif filepath.suffix == '.json' or self.format_var.get() == 'json':
+                    data = json.loads(content) if content.strip() else {}
+                    if isinstance(data, dict) and 'speakers' in data and hasattr(self, '_speaker_models'):
+                        for s in data['speakers']:
+                            name = s.get('name')
+                            if name and name in self._speaker_models:
+                                s['voice'] = self._speaker_models.get(name)
+                        new_content = json.dumps(data, ensure_ascii=False, indent=2)
+                        filepath.write_text(new_content, encoding='utf-8')
+                    else:
+                        filepath.write_text(content, encoding='utf-8')
+                else:
+                    # For free-form structured text we write content and also create a .meta.json with speaker mapping
+                    filepath.write_text(content, encoding='utf-8')
+                    try:
+                        if hasattr(self, '_speaker_models') and self._speaker_models:
+                            meta_path = filepath.with_suffix(filepath.suffix + '.meta.json')
+                            meta_path.write_text(json.dumps({'speaker_models': self._speaker_models}, ensure_ascii=False, indent=2), encoding='utf-8')
+                    except Exception:
+                        pass
+
+            except Exception:
+                # Fall back to raw write
+                filepath.write_text(content, encoding='utf-8')
 
             self.current_file = filepath
             self.is_modified = False
@@ -1094,6 +1155,102 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
         if self.script_editor.edit_modified():
             self.is_modified = True
             self.script_editor.edit_modified(False)
+
+    # ========== Block Editor (quick prototype) ==========
+    def render_blocks(self):
+        """Render blocks from `self.script_data` into the block_inner area."""
+        try:
+            # clear
+            for w in self.block_inner.winfo_children():
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+
+            for b in (self.script_data or []):
+                self._create_block_widget(b)
+        except Exception:
+            pass
+
+    def _create_block_widget(self, block: dict):
+        """Create a simple block card for a block dict."""
+        try:
+            frame = ttk.Frame(self.block_inner, relief=tk.RIDGE, borderwidth=1, padding=6)
+            # header: speaker badge
+            header = ttk.Frame(frame)
+            header.pack(fill=tk.X)
+            sp = str(block.get('speaker') or 'Direction')
+            badge = ttk.Label(header, text=sp, background='#2b7', padding=(6,2))
+            badge.pack(side=tk.LEFT)
+            title = ttk.Label(header, text=(block.get('chapter') or ''), foreground='#666')
+            title.pack(side=tk.LEFT, padx=(6,0))
+
+            # body: editable text (read-only preview to start)
+            txt = tk.Text(frame, height=4, wrap=tk.WORD)
+            txt.insert('1.0', block.get('text',''))
+            txt.pack(fill=tk.BOTH, expand=True, pady=(6,6))
+
+            # footer: actions
+            footer = ttk.Frame(frame)
+            footer.pack(fill=tk.X)
+
+            def _on_play():
+                threading.Thread(target=lambda: self.play_block(block), daemon=True).start()
+
+            ttk.Button(footer, text='Play', command=_on_play).pack(side=tk.LEFT)
+            ttk.Button(footer, text='Edit', command=lambda b=block, t=txt: self._edit_block(b, t)).pack(side=tk.LEFT, padx=4)
+            ttk.Button(footer, text='Delete', command=lambda b=block, f=frame: self._delete_block(b, f)).pack(side=tk.RIGHT)
+
+            frame.pack(fill=tk.X, pady=6, padx=6)
+            return frame
+        except Exception:
+            return None
+
+    def _edit_block(self, block: dict, text_widget: tk.Text):
+        # simple save back from text widget
+        try:
+            txt = text_widget.get('1.0', tk.END).strip()
+            block['text'] = txt
+            self.is_modified = True
+        except Exception:
+            pass
+
+    def _delete_block(self, block: dict, frame_widget):
+        try:
+            if messagebox.askyesno('Delete', 'Block löschen?'):
+                try:
+                    self.script_data.remove(block)
+                except Exception:
+                    pass
+                try:
+                    frame_widget.destroy()
+                except Exception:
+                    pass
+                self.is_modified = True
+        except Exception:
+            pass
+
+    def play_block(self, block: dict):
+        """Synthesize single block and play using the project's engine manager and player."""
+        try:
+            txt = block.get('text','')
+            speaker = block.get('speaker') or ''
+            manager = get_engine_manager()
+            # call synthesize on manager to get numpy array and sample rate
+            audio, sr = manager.synthesize(txt, speaker, progress_callback=None)
+            # write to temp wav
+            tmpf = Path(_tempfile.gettempdir()) / f"pf_block_{uuid.uuid4().hex}.wav"
+            sf.write(str(tmpf), audio, sr, subtype='PCM_16')
+            # play via player
+            try:
+                self.audio_player.play(tmpf)
+            except Exception:
+                # fallback to global player
+                from ..audio.player import get_player
+
+                get_player().play(tmpf)
+        except Exception:
+            pass
 
     def apply_syntax_highlighting(self):
         """Wende Syntax-Highlighting an"""
@@ -1269,6 +1426,14 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                 description=voice.description,
             )
 
+            # persist mapping for quick project save/load
+            try:
+                if not hasattr(self, '_speaker_models'):
+                    self._speaker_models = {}
+                self._speaker_models[speaker_name] = voice.id
+            except Exception:
+                pass
+
             self.update_speakers_list()
             self.update_status(f"Stimme '{speaker_name}' als Sprecher hinzugefügt")
 
@@ -1338,15 +1503,180 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
     def _on_voice_right_click(self, event):
         """Show context menu for voice list (Preview)."""
         try:
+            # determine clicked index
+            idx = self.voice_listbox.nearest(event.y)
+            try:
+                item = self.voice_listbox.get(idx)
+            except Exception:
+                item = None
+
             menu = tk.Menu(self.root, tearoff=0)
-            menu.add_command(label="Vorschau", command=lambda: self._on_preview_selected_voice())
+            # If it's a Piper model entry like 'PIPER: key' expose direct preview
+            if item and isinstance(item, str) and item.startswith('PIPER:'):
+                menu.add_command(label="Vorschau (Piper)", command=lambda i=idx: self._preview_piper_by_index(i))
+            else:
+                menu.add_command(label="Vorschau", command=lambda: self._on_preview_selected_voice())
+
             menu.add_command(label="Als Sprecher verwenden", command=self.use_voice_as_speaker)
+            # Assign to speaker submenu
+            submenu = tk.Menu(menu, tearoff=0)
+            for speaker in list(self.speakers.keys()):
+                submenu.add_command(label=f"Assign to {speaker}", command=lambda s=speaker, i=idx: self._assign_voice_to_speaker_by_index(i, s))
+            menu.add_cascade(label="Assign to Speaker", menu=submenu)
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             try:
                 menu.grab_release()
             except Exception:
                 pass
+
+    def _assign_voice_to_speaker_by_index(self, idx: int, speaker_name: str):
+        try:
+            item = self.voice_listbox.get(idx)
+        except Exception:
+            return
+        if not item:
+            return
+        # if Piper entry
+        if isinstance(item, str) and item.startswith('PIPER:'):
+            key = item.split(':', 1)[1].strip()
+        else:
+            # map via voice_library if possible
+            language = self.lang_var.get()
+            style = self.style_var.get() or None
+            voices = self.voice_library.search(language=language, style=style)
+            if idx < len(voices):
+                key = voices[idx].id
+            else:
+                key = str(item)
+        self._assign_voice_to_speaker(key, speaker_name)
+
+    def _assign_voice_to_speaker(self, voice_key: str, speaker_name: str):
+        # ensure mapping container
+        if not hasattr(self, '_speaker_models'):
+            self._speaker_models = {}
+        self._speaker_models[speaker_name] = voice_key
+        # set on speaker object if present
+        sp = self.speakers.get(speaker_name)
+        if sp:
+            try:
+                sp.voice_sample = voice_key
+            except Exception:
+                try:
+                    sp.model_path = voice_key
+                except Exception:
+                    pass
+        self.update_speakers_list()
+
+    def _preview_piper_by_index(self, idx: int):
+        try:
+            item = self.voice_listbox.get(idx)
+            if not item or not item.startswith('PIPER:'):
+                return
+            key = item.split(':', 1)[1].strip()
+            # Launch preview in background thread
+            def _run():
+                try:
+                    # resolve model path with robust lookup
+                    from ..tts.engine_manager import (
+                        discover_local_piper_models,
+                        discover_local_hf_repo,
+                        get_engine_manager,
+                        TTSEngine,
+                    )
+
+                    def _resolve_piper_model_path(vk: str):
+                        # Accept filesystem path
+                        try:
+                            candidate = Path(vk)
+                            if candidate.exists():
+                                return candidate
+                        except Exception:
+                            pass
+
+                        # Normalize key (strip common prefixes)
+                        vk_norm = vk
+                        for pref in ('PIPER:', 'piper:', 'piper/', 'PIPER/'):
+                            if vk_norm.startswith(pref):
+                                vk_norm = vk_norm[len(pref):]
+                                break
+
+                        vk_norm = vk_norm.strip()
+
+                        # discover local piper models
+                        pmap = discover_local_piper_models()
+                        # exact match
+                        if vk_norm in pmap:
+                            return pmap[vk_norm]
+
+                        # try matching suffixes (e.g. voice keys with or without locale)
+                        for k, p in pmap.items():
+                            if k.endswith(vk_norm) or vk_norm in k:
+                                return p
+
+                        # try direct folder under models/piper
+                        models_dir_candidates = [Path.cwd() / 'models', Path(__file__).resolve().parents[3] / 'models']
+                        for base in models_dir_candidates:
+                            try:
+                                cand = base / 'piper' / vk_norm
+                                if cand.exists():
+                                    return cand
+                            except Exception:
+                                pass
+
+                        # fallback: try hf snapshot folders (some pipers downloaded into hf-styled dirs)
+                        hf_candidates = discover_local_hf_repo(vk_norm)
+                        if hf_candidates:
+                            return hf_candidates[0]
+
+                        return None
+
+                    model_path = _resolve_piper_model_path(key)
+                    if not model_path:
+                        # nothing to preview
+                        try:
+                            self.root.after(0, lambda: self.update_status(f"Preview failed: local Piper model '{key}' not found"))
+                        except Exception:
+                            pass
+                        return
+
+                    mgr = get_engine_manager()
+                    # use context manager to load and unload engine
+                    with mgr.use_engine(TTSEngine.PIPER, config={"model_path": str(model_path)}) as engine:
+                        # engine.synthesize returns numpy array for many engines; capture and write
+                        wav = engine.synthesize(f"Hallo, dies ist eine Vorschau der Stimme {key}")
+                        # If manager.use_engine yields engine instance, some implementations return (audio, sr)
+                        sr = getattr(engine, 'sample_rate', 22050)
+                        # If synthesize returned tuple
+                        if isinstance(wav, tuple) and len(wav) == 2:
+                            data, sr = wav
+                            wav = data
+                        import tempfile, os
+                        fd, fn = tempfile.mkstemp(suffix='.wav')
+                        os.close(fd)
+                        try:
+                            sf.write(fn, wav, sr)
+                        except Exception:
+                            # try to coerce numpy array
+                            import numpy as _np
+                            _arr = _np.asarray(wav, dtype=_np.float32)
+                            sf.write(fn, _arr, int(sr))
+
+                        try:
+                            self.audio_player.play(Path(fn))
+                        except Exception:
+                            try:
+                                from ..audio.player import get_player
+
+                                get_player().play(Path(fn))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            threading.Thread(target=_run, daemon=True).start()
+        except Exception:
+            pass
 
     def _voice_drag_motion(self, event):
         # Provide visual feedback: highlight the line under the mouse
@@ -1407,6 +1737,13 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                 # insert into speakers dict keyed by name
                 self.speakers[new_speaker.name] = new_speaker
                 self.update_speakers_list()
+                # persist mapping
+                try:
+                    if not hasattr(self, '_speaker_models'):
+                        self._speaker_models = {}
+                    self._speaker_models[new_speaker.name] = voice.id
+                except Exception:
+                    pass
             except Exception as e:
                 print("Could not create speaker from voice:", e)
 
@@ -2372,6 +2709,179 @@ class GenerateProjectDialog:
         """Update Editor-Ansicht basierend auf Format"""
         # TODO: Format konvertieren
         pass
+
+    # ===== Voice UI helpers: context menu and drag/drop =====
+    def _extract_voice_key_from_listbox_entry(self, idx):
+        try:
+            text = self.voice_listbox.get(idx)
+            if text.startswith('PIPER:'):
+                return text.split(':', 1)[1].strip()
+            return text
+        except Exception:
+            return None
+
+    def _on_voice_press(self, event):
+        """Start a simple drag payload when pressing on a voice entry."""
+        try:
+            idx = self.voice_listbox.nearest(event.y)
+            key = self._extract_voice_key_from_listbox_entry(idx)
+            if key:
+                # store payload for drop
+                self._drag_payload = key
+                # set selection so user sees it
+                self.voice_listbox.selection_clear(0, tk.END)
+                self.voice_listbox.selection_set(idx)
+                # create drag ghost
+                try:
+                    self._drag_ghost = tk.Toplevel(self.root)
+                    self._drag_ghost.overrideredirect(True)
+                    lbl = ttk.Label(self._drag_ghost, text=key, relief=tk.SOLID, padding=4)
+                    lbl.pack()
+                    # position near cursor
+                    x = self.root.winfo_pointerx() + 10
+                    y = self.root.winfo_pointery() + 10
+                    self._drag_ghost.geometry(f'+{x}+{y}')
+                    # bind motion/release to root for tracking
+                    self.root.bind('<B1-Motion>', self._on_voice_motion)
+                    self.root.bind('<ButtonRelease-1>', self._on_voice_release)
+                except Exception:
+                    self._drag_ghost = None
+        except Exception:
+            self._drag_payload = None
+
+    def _on_speakers_drop(self, event):
+        """Handle drop from voice list onto speakers listbox."""
+        try:
+            if not getattr(self, '_drag_payload', None):
+                return
+            idx = self.speakers_listbox.nearest(event.y)
+            if idx is None:
+                return
+            # resolve speaker name by index
+            try:
+                name = list(self.speakers.keys())[idx]
+            except Exception:
+                return
+            self._assign_voice_to_speaker(self._drag_payload, name)
+        finally:
+            self._drag_payload = None
+
+    def _on_voice_motion(self, event):
+        try:
+            if hasattr(self, '_drag_ghost') and self._drag_ghost:
+                x = self.root.winfo_pointerx() + 10
+                y = self.root.winfo_pointery() + 10
+                self._drag_ghost.geometry(f'+{x}+{y}')
+        except Exception:
+            pass
+
+    def _on_voice_release(self, event):
+        try:
+            # remove ghost and unbind
+            if hasattr(self, '_drag_ghost') and self._drag_ghost:
+                try:
+                    self._drag_ghost.destroy()
+                except Exception:
+                    pass
+                self._drag_ghost = None
+            try:
+                self.root.unbind('<B1-Motion>')
+                self.root.unbind('<ButtonRelease-1>')
+            except Exception:
+                pass
+            # If the release was over a Text widget in blocks, insert voice tag
+            widget = event.widget
+            # detect widget under pointer
+            try:
+                x_root = self.root.winfo_pointerx()
+                y_root = self.root.winfo_pointery()
+                target = self.root.winfo_containing(x_root, y_root)
+            except Exception:
+                target = None
+
+            if target and isinstance(getattr(target, '__class__', None), type) and target.winfo_class() == 'Text':
+                # insert at current mouse index
+                try:
+                    text_widget = target
+                    voice_key = getattr(self, '_drag_payload', None)
+                    if voice_key:
+                        # insert voice tag
+                        text_widget.insert(tk.INSERT, f" [voice:{voice_key}] ")
+                        self.is_modified = True
+                except Exception:
+                    pass
+
+        finally:
+            self._drag_payload = None
+
+    def _on_voice_right_click(self, event):
+        """Show context menu for voice list entries."""
+        try:
+            idx = self.voice_listbox.nearest(event.y)
+            entry = self.voice_listbox.get(idx)
+            voice_key = None
+            if entry.startswith('PIPER:'):
+                voice_key = entry.split(':', 1)[1].strip()
+
+            menu = tk.Menu(self.root, tearoff=0)
+            if voice_key:
+                assign_menu = tk.Menu(menu, tearoff=0)
+                # add speaker entries dynamically
+                if self.speakers:
+                    for name in list(self.speakers.keys()):
+                        assign_menu.add_command(
+                            label=name,
+                            command=lambda n=name, k=voice_key: self._assign_voice_to_speaker(k, n),
+                        )
+                else:
+                    assign_menu.add_command(label="(no speakers)", state=tk.DISABLED)
+
+                menu.add_cascade(label="Assign to Speaker", menu=assign_menu)
+                menu.add_separator()
+                menu.add_command(label="Copy voice key", command=lambda k=voice_key: self.root.clipboard_append(k))
+            else:
+                menu.add_command(label="No action", state=tk.DISABLED)
+
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+        except Exception:
+            pass
+
+    def _assign_voice_to_speaker(self, voice_key: str, speaker_name: str):
+        """Associate a local voice/model with a speaker in the editor.
+
+        This will attempt to set common attributes (`voice_sample`, `model_path`)
+        on the speaker object stored in `self.speakers`. If attributes aren't
+        present, the mapping is stored in an internal dict `self._speaker_models`.
+        """
+        try:
+            sp = self.speakers.get(speaker_name)
+            if sp is None:
+                messagebox.showwarning("Sprecher nicht gefunden", f"Sprecher {speaker_name} nicht vorhanden")
+                return
+
+            assigned = False
+            # try common attribute names
+            for attr in ('voice_sample', 'model_path', 'voice_profile'):
+                try:
+                    setattr(sp, attr, voice_key)
+                    assigned = True
+                except Exception:
+                    continue
+
+            # fallback mapping
+            if not assigned:
+                if not hasattr(self, '_speaker_models'):
+                    self._speaker_models = {}
+                self._speaker_models[speaker_name] = voice_key
+
+            # update UI (speaker list display)
+            self.update_speakers_list()
+            self.update_status(f"Assigned {voice_key} to speaker {speaker_name}")
+        except Exception as e:
+            messagebox.showerror("Assignment failed", str(e))
 
     def show_docs(self):
         """Zeige Dokumentation"""

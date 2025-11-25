@@ -292,6 +292,146 @@ def voices(language, gender, style):
     console.print(f"[dim]Gesamt in Bibliothek: {voice_lib.get_voice_count()} Stimmen[/dim]\n")
 
 
+@cli.command()
+def templates():
+    """
+    Zeigt verfügbare Podcast-Vorlagen und Stile
+
+    Beispiel:
+
+        podcastforge templates
+    """
+    from rich.table import Table
+    from .core.config import PODCAST_TEMPLATES, PodcastStyle
+
+    console.print("\n[bold cyan]📋 Verfügbare Podcast-Vorlagen[/bold cyan]\n")
+
+    table = Table(title="Podcast-Stile")
+    table.add_column("Stil", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Sprecher", style="yellow")
+    table.add_column("Dauer", style="magenta")
+    table.add_column("Beschreibung", style="dim")
+
+    for style, template in PODCAST_TEMPLATES.items():
+        table.add_row(
+            style.value,
+            template["name"],
+            str(template["num_speakers"]),
+            f"{template['suggested_duration']} min",
+            template["description"][:50] + "..." if len(template["description"]) > 50 else template["description"],
+        )
+
+    console.print(table)
+    console.print("\n[dim]Nutze: podcastforge generate --style <stil> --topic 'Dein Thema'[/dim]\n")
+
+
+@cli.command()
+@click.option("--topic", "-t", required=True, help="Podcast-Thema")
+@click.option(
+    "--style",
+    "-s",
+    type=click.Choice([s.value for s in PodcastStyle]),
+    default="discussion",
+    help="Podcast-Stil (nutze 'podcastforge templates' für Übersicht)",
+)
+@click.option("--language", "-l", default="de", help="Sprache (de, en, etc.)")
+@click.option("--output", "-o", default=None, help="Ausgabedatei (optional)")
+def quick(topic, style, language, output):
+    """
+    🚀 Schnellstart: Erstellt einen Podcast mit Standardeinstellungen
+
+    Einfachster Weg um einen Podcast zu generieren.
+    Nutzt automatisch optimale Stimmen und Einstellungen.
+
+    Beispiele:
+
+        podcastforge quick --topic "Künstliche Intelligenz"
+
+        podcastforge quick -t "Klimawandel" -s interview
+
+        podcastforge quick -t "Gesundheit" --language en
+    """
+    from .core.config import PODCAST_TEMPLATES, get_podcast_template
+
+    console.print(
+        """
+[bold cyan]╔══════════════════════════════════════╗
+║     🚀 PodcastForge Schnellstart      ║
+╚══════════════════════════════════════╝[/bold cyan]
+    """
+    )
+
+    # Hole Template für den Stil
+    template = get_podcast_template(PodcastStyle(style))
+
+    # Generiere Ausgabedatei wenn nicht angegeben
+    if not output:
+        # Erstelle sicheren Dateinamen aus Thema
+        safe_topic = "".join(c if c.isalnum() else "_" for c in topic[:30])
+        output = f"podcast_{safe_topic.lower()}.mp3"
+
+    console.print(f"[green]📻 Podcast:[/green] {template['name']}")
+    console.print(f"[green]📝 Thema:[/green] {topic}")
+    console.print(f"[green]👥 Sprecher:[/green] {template['num_speakers']}")
+    console.print(f"[green]⏱️ Geschätzte Dauer:[/green] {template['suggested_duration']} min")
+    console.print(f"[green]🎨 Tonalität:[/green] {template['tone']}")
+    console.print()
+
+    try:
+        # Initialisiere PodcastForge mit Standardeinstellungen
+        forge = PodcastForge(llm_model="llama2", language=language)
+
+        # Generiere Podcast
+        podcast_file = forge.create_podcast(
+            topic=topic,
+            style=style,
+            duration=template['suggested_duration'],
+            output=output,
+        )
+
+        console.print(f"\n[bold green]🎉 Erfolg![/bold green]")
+        console.print(f"[green]Podcast erstellt: {podcast_file}[/green]")
+
+    except Exception as e:
+        console.print(f"[bold red]❌ Fehler: {str(e)}[/bold red]")
+        sys.exit(1)
+
+
+@cli.command()
+def quality():
+    """
+    Zeigt verfügbare Qualitätsstufen für die Sprachsynthese
+
+    Beispiel:
+
+        podcastforge quality
+    """
+    from rich.table import Table
+    from .core.config import VOICE_QUALITY_PRESETS, VoiceQuality
+
+    console.print("\n[bold cyan]🎚️ Qualitätsstufen[/bold cyan]\n")
+
+    table = Table(title="Voice-Qualität")
+    table.add_column("Stufe", style="cyan")
+    table.add_column("Engine", style="green")
+    table.add_column("Sample Rate", style="yellow")
+    table.add_column("Bitrate", style="magenta")
+    table.add_column("Beschreibung", style="dim")
+
+    for quality_level, settings in VOICE_QUALITY_PRESETS.items():
+        table.add_row(
+            quality_level.value,
+            settings["engine"],
+            f"{settings['sample_rate']} Hz",
+            settings["bitrate"],
+            settings["description"],
+        )
+
+    console.print(table)
+    console.print("\n[dim]Standard: 'standard' - Ausgewogene Qualität für normale Podcasts[/dim]\n")
+
+
 def main():
     """Haupteinstiegspunkt"""
     cli()

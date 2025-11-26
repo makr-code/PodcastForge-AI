@@ -60,8 +60,8 @@ def edit(file):
 
         editor.run()
 
-    except ImportError as e:
-        console.print(f"[red]Fehler: tkinter nicht installiert![/red]")
+    except ImportError:
+        console.print("[red]Fehler: tkinter nicht installiert![/red]")
         console.print("\n[yellow]Installation:[/yellow]")
         console.print("  Ubuntu/Debian: sudo apt-get install python3-tk")
         console.print("  macOS: brew install python-tk")
@@ -112,7 +112,7 @@ def generate(topic, style, duration, language, llm, output, music):
             topic=topic, style=style, duration=duration, output=output, background_music=music
         )
 
-        console.print(f"\n[bold green]🎉 Erfolg![/bold green]")
+        console.print("\n[bold green]🎉 Erfolg![/bold green]")
         console.print(f"[green]Podcast erstellt: {podcast_file}[/green]")
 
     except Exception as e:
@@ -172,7 +172,7 @@ def test():
             console.print(f"  Verfügbare Modelle: {', '.join([m['name'] for m in models[:3]])}")
         else:
             console.print("  [yellow]⚠[/yellow] Ollama antwortet nicht korrekt")
-    except:
+    except Exception:
         console.print("  [red]✗[/red] Ollama nicht erreichbar")
         console.print("  [dim]Starte Ollama mit: ollama serve[/dim]")
 
@@ -219,7 +219,6 @@ def models():
 
     except Exception as e:
         console.print(f"[red]Fehler: {e}[/red]")
-
 
 
 @cli.command()
@@ -302,7 +301,7 @@ def templates():
         podcastforge templates
     """
     from rich.table import Table
-    from .core.config import PODCAST_TEMPLATES, PodcastStyle
+    from .core.config import PODCAST_TEMPLATES
 
     console.print("\n[bold cyan]📋 Verfügbare Podcast-Vorlagen[/bold cyan]\n")
 
@@ -352,7 +351,7 @@ def quick(topic, style, language, output):
 
         podcastforge quick -t "Gesundheit" --language en
     """
-    from .core.config import PODCAST_TEMPLATES, get_podcast_template
+    from .core.config import get_podcast_template
 
     console.print(
         """
@@ -390,7 +389,7 @@ def quick(topic, style, language, output):
             output=output,
         )
 
-        console.print(f"\n[bold green]🎉 Erfolg![/bold green]")
+        console.print("\n[bold green]🎉 Erfolg![/bold green]")
         console.print(f"[green]Podcast erstellt: {podcast_file}[/green]")
 
     except Exception as e:
@@ -408,7 +407,7 @@ def quality():
         podcastforge quality
     """
     from rich.table import Table
-    from .core.config import VOICE_QUALITY_PRESETS, VoiceQuality
+    from .core.config import VOICE_QUALITY_PRESETS
 
     console.print("\n[bold cyan]🎚️ Qualitätsstufen[/bold cyan]\n")
 

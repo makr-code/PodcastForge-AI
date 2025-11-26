@@ -49,6 +49,9 @@ ollama pull llama2
 ### Ersten Podcast generieren
 
 ```bash
+# 🧙 Interaktiver Assistent (empfohlen für Einsteiger)
+podcastforge wizard
+
 # 🚀 Schnellstart - Ein Befehl genügt!
 podcastforge quick --topic "Künstliche Intelligenz im Alltag"
 
@@ -63,6 +66,16 @@ podcastforge generate \
     --llm mistral \
     --language de \
     --output mein_podcast.mp3
+```
+
+### Systemstatus prüfen
+
+```bash
+# Alle Komponenten auf einen Blick
+podcastforge status
+
+# Detaillierte Installation testen
+podcastforge test
 ```
 
 ### Verfügbare Podcast-Stile anzeigen
@@ -150,19 +163,26 @@ docker-compose exec podcastforge generate \
 ### Alle verfügbaren Befehle
 
 ```bash
-# 🚀 Schnellstart - Podcast mit einem Befehl
+# 🧙 Interaktiver Assistent (Kurzform: w)
+podcastforge wizard       # Schritt-für-Schritt-Anleitung
+
+# 🔍 Systemstatus prüfen (Kurzform: s)
+podcastforge status       # Alle Komponenten auf einen Blick
+podcastforge info         # Projektinformationen
+
+# 🚀 Schnellstart (Kurzform: q)
 podcastforge quick --topic "Dein Thema" --style interview
 
-# 📋 Vorlagen anzeigen
+# 📋 Vorlagen anzeigen (Kurzform: t)
 podcastforge templates    # Alle Podcast-Stile mit Sprecheranzahl und Dauer
 
 # 🎚️ Qualitätsstufen anzeigen
 podcastforge quality      # Von Preview bis Ultra-Qualität
 
-# GUI Editor starten
+# 🖊️ GUI Editor starten (Kurzform: e)
 podcastforge edit [datei]              # Neues Projekt oder vorhandene Datei öffnen
 
-# Podcast generieren
+# 🎙️ Podcast generieren (Kurzform: g)
 podcastforge generate \
     --topic "Thema" \
     --style discussion \
@@ -174,7 +194,7 @@ podcastforge generate \
 # Aus vorhandenem Skript generieren
 podcastforge from-script script.json --output podcast.mp3
 
-# Voice Library durchsuchen (21+ Stimmen!)
+# 🎤 Voice Library durchsuchen (Kurzform: v) - 21+ Stimmen!
 podcastforge voices \
     --language de \
     --gender female \

@@ -12,8 +12,11 @@ Generiere professionelle Podcasts vollautomatisch: Von der Idee bis zur fertigen
 
 - 🤖 **KI-Drehbucherstellung** mit Ollama (Llama2, Mistral, etc.)
 - 🎙️ **Natürliche Sprachsynthese** mit ebook2audiobook und XTTS
-- 👥 **Multi-Speaker Support** - Verschiedene Stimmen für jeden Sprecher
-- 🎨 **Verschiedene Podcast-Stile** - Interview, Diskussion, News, Comedy, etc.
+- 👥 **Multi-Speaker Support** - 21+ professionelle Stimmen für jeden Sprecher
+- 🇩🇪 **11 deutsche Stimmen** - Moderatoren, Experten, Erzähler und mehr
+- 🎨 **8 Podcast-Stile** - Interview, Diskussion, News, Comedy, Dokumentar, etc.
+- 🎚️ **4 Qualitätsstufen** - Von schneller Vorschau bis Studio-Qualität
+- 🚀 **Schnellstart-Workflow** - Ein Befehl genügt für professionelle Podcasts
 - 🎚️ **Audio-Nachbearbeitung** - Normalisierung, Kompression, Hintergrundmusik
 - 🐳 **Docker Support** - Einfaches Deployment
 - 🌍 **Mehrsprachig** - Deutsch, Englisch und viele weitere Sprachen
@@ -46,12 +49,16 @@ ollama pull llama2
 ### Ersten Podcast generieren
 
 ```bash
-# Einfaches Beispiel
-podcastforge generate \
-    --topic "Künstliche Intelligenz im Alltag" \
-    --duration 10
+# 🧙 Interaktiver Assistent (empfohlen für Einsteiger)
+podcastforge wizard
 
-# Mit erweiterten Optionen
+# 🚀 Schnellstart - Ein Befehl genügt!
+podcastforge quick --topic "Künstliche Intelligenz im Alltag"
+
+# Mit Stil-Auswahl
+podcastforge quick --topic "Klimawandel" --style interview
+
+# Erweiterte Optionen
 podcastforge generate \
     --topic "Klimawandel und Nachhaltigkeit" \
     --style discussion \
@@ -59,6 +66,26 @@ podcastforge generate \
     --llm mistral \
     --language de \
     --output mein_podcast.mp3
+```
+
+### Systemstatus prüfen
+
+```bash
+# Alle Komponenten auf einen Blick
+podcastforge status
+
+# Detaillierte Installation testen
+podcastforge test
+```
+
+### Verfügbare Podcast-Stile anzeigen
+
+```bash
+# Alle Vorlagen mit empfohlener Dauer und Sprecheranzahl
+podcastforge templates
+
+# Qualitätsstufen anzeigen
+podcastforge quality
 ```
 
 ### Mit Python
@@ -136,10 +163,26 @@ docker-compose exec podcastforge generate \
 ### Alle verfügbaren Befehle
 
 ```bash
-# GUI Editor starten
+# 🧙 Interaktiver Assistent (Kurzform: w)
+podcastforge wizard       # Schritt-für-Schritt-Anleitung
+
+# 🔍 Systemstatus prüfen (Kurzform: s)
+podcastforge status       # Alle Komponenten auf einen Blick
+podcastforge info         # Projektinformationen
+
+# 🚀 Schnellstart (Kurzform: q)
+podcastforge quick --topic "Dein Thema" --style interview
+
+# 📋 Vorlagen anzeigen (Kurzform: t)
+podcastforge templates    # Alle Podcast-Stile mit Sprecheranzahl und Dauer
+
+# 🎚️ Qualitätsstufen anzeigen
+podcastforge quality      # Von Preview bis Ultra-Qualität
+
+# 🖊️ GUI Editor starten (Kurzform: e)
 podcastforge edit [datei]              # Neues Projekt oder vorhandene Datei öffnen
 
-# Podcast generieren
+# 🎙️ Podcast generieren (Kurzform: g)
 podcastforge generate \
     --topic "Thema" \
     --style discussion \
@@ -151,10 +194,10 @@ podcastforge generate \
 # Aus vorhandenem Skript generieren
 podcastforge from-script script.json --output podcast.mp3
 
-# Voice Library durchsuchen
+# 🎤 Voice Library durchsuchen (Kurzform: v) - 21+ Stimmen!
 podcastforge voices \
     --language de \
-    --gender male \
+    --gender female \
     --style professional
 
 # TTS-Test durchführen

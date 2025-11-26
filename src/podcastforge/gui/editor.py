@@ -6,6 +6,7 @@ Professioneller tkinter-basierter Editor für Podcast-Skripte und TTS-Generierun
 
 import json
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -611,10 +612,6 @@ class PodcastEditor:
 
         except Exception as e:
             print('Draft open failed:', e)
-
-        # Timeline (optional)
-        self.timeline_frame = ttk.LabelFrame(parent, text="⏱️ Timeline", padding=5)
-        # Initial versteckt
 
     def setup_right_panel(self, parent):
         """Rechtes Panel: Eigenschaften & Audio-Vorschau"""
@@ -1484,8 +1481,9 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
             def _run_preview():
                 try:
                     preview_voice(voice.id, sample_text="Hallo, dies ist eine Vorschau der Stimme.")
-                except Exception as e:
-                    self.root.after(0, lambda: messagebox.showerror("Vorschau fehlgeschlagen", str(e)))
+                except Exception as preview_err:
+                    err_msg = str(preview_err)
+                    self.root.after(0, lambda msg=err_msg: messagebox.showerror("Vorschau fehlgeschlagen", msg))
 
             threading.Thread(target=_run_preview, daemon=True).start()
         except Exception as e:
@@ -2073,10 +2071,12 @@ Gast [neutral]: Vielen Dank für die Einladung! [0.5s]
                 except Exception:
                     pass
             else:
-                self.root.after(0, lambda: messagebox.showerror('Generierung fehlgeschlagen', res.get('message', 'unknown')))
+                error_msg = res.get('message', 'unknown')
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror('Generierung fehlgeschlagen', msg))
 
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror('Generierung Fehler', str(e)))
+        except Exception as gen_err:
+            error_str = str(gen_err)
+            self.root.after(0, lambda msg=error_str: messagebox.showerror('Generierung Fehler', msg))
         finally:
             try:
                 shutil.rmtree(tmpdir)

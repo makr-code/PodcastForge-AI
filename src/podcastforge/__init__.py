@@ -1,8 +1,11 @@
 """
 PodcastForge AI - KI-gestützter Podcast-Generator
+
+Hochwertige Podcast-Generierung mit natürlichen Sprechern und Sprecherinnen.
+Einfacher und ansprechender Workflow für die Podcast-Erstellung.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
 __author__ = "makr-code"
 __license__ = "MIT"
 
@@ -13,8 +16,14 @@ __license__ = "MIT"
 # `from podcastforge.core.forge import PodcastForge` wenn nötig.
 
 __all__ = [
+    # Core-Klassen
     "PodcastForge",
     "PodcastConfig",
     "PodcastStyle",
     "Speaker",
+    # Qualitätsstufen
+    "VoiceQuality",
+    # Template-Funktionen
+    "get_quality_preset",
+    "get_podcast_template",
 ]

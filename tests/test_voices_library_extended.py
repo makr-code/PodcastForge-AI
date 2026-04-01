@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from typing import List
+from unittest.mock import patch
 
 import pytest
 
@@ -280,8 +281,8 @@ class TestSaveLoadYaml:
         result = lib.load_from_yaml(str(p))
         assert result is False
 
-    def test_save_returns_false_on_unwritable_path(self):
+    def test_save_returns_false_on_unwritable_path(self, tmp_path):
         lib = _lib_with(_make_voice())
-        # Attempt to write to /proc/xxx which should fail
-        result = lib.save_to_yaml("/proc/nonexistent_dir/voices.yaml")
+        with patch("podcastforge.voices.library.Path.write_text", side_effect=PermissionError("denied")):
+            result = lib.save_to_yaml(str(tmp_path / "voices.yaml"))
         assert result is False

@@ -5,11 +5,11 @@ Unit tests for TTSEngineManager using mock engines.
 import pytest
 import threading
 import time
-from pathlib import Path as P
+from pathlib import Path
 
 # Ensure src is importable (tests already do this elsewhere)
 import sys
-sys.path.insert(0, str(P(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from podcastforge.tts.engine_manager import (
     TTSEngineManager,

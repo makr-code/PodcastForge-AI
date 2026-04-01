@@ -133,7 +133,11 @@ class Ebook2AudiobookAdapter:
         lines = []
 
         for entry in script:
-            speaker = entry.get("speaker_name") or entry.get("speaker_id") or "Unknown"
+            raw_name = entry.get("speaker_name")
+            raw_id = entry.get("speaker_id")
+            speaker = (raw_name if raw_name is not None and raw_name != "" else None) \
+                   or (raw_id if raw_id is not None and raw_id != "" else None) \
+                   or "Unknown"
             text = entry.get("text", "")
             emotion = entry.get("emotion", "neutral")
 

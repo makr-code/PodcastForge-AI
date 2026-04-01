@@ -1188,6 +1188,12 @@ class DummyEngine(BaseTTSEngine):
             logger.error(f"DummyEngine synthesis failed: {e}")
             raise
 
+    def unload(self):
+        """Release any resources held by the DummyEngine."""
+        self.model = None
+        self.is_loaded = False
+        logger.info("DummyEngine unloaded")
+
 
 # Register DummyEngine into the factory mapping (monkey-patch the dict entry)
 try:

@@ -976,6 +976,53 @@ class TTSEngineManager:
             except Exception:
                 pass
 
+    def synthesize_with_fallback(
+        self,
+        text: str,
+        speaker: str,
+        engines: List[TTSEngine],
+        config: Optional[Dict] = None,
+        **kwargs,
+    ) -> Tuple[np.ndarray, int]:
+        """
+        Versucht Synthese mit mehreren Engines der Reihe nach (Fallback-Kette).
+
+        Die Engines werden in der angegebenen Reihenfolge probiert. Schlägt eine
+        Engine fehl, wird die nächste verwendet. Erst wenn alle scheitern, wird
+        eine RuntimeError geworfen.
+
+        Args:
+            text: Zu synthetisierender Text
+            speaker: Speaker-ID / Stimmprofil
+            engines: Geordnete Liste der zu probierenden Engine-Typen
+            config: Engine-Konfiguration (wird an alle Engines weitergegeben)
+            **kwargs: Zusätzliche engine-spezifische Parameter
+
+        Returns:
+            (audio, sample_rate) Tuple vom ersten erfolgreichen Engine-Aufruf
+
+        Raises:
+            ValueError: Wenn `engines` leer ist
+            RuntimeError: Wenn alle Engines fehlschlagen
+        """
+        if not engines:
+            raise ValueError("engines darf nicht leer sein")
+
+        last_exc: Optional[Exception] = None
+        for engine_type in engines:
+            try:
+                return self.synthesize(text, speaker, engine_type=engine_type, config=config, **kwargs)
+            except Exception as e:
+                logger.warning(
+                    f"Engine '{engine_type.value}' fehlgeschlagen ('{e}'), versuche nächste Engine..."
+                )
+                last_exc = e
+
+        raise RuntimeError(
+            f"Alle Engines in der Fallback-Kette fehlgeschlagen "
+            f"({[e.value for e in engines]}). Letzter Fehler: {last_exc}"
+        )
+
     def synthesize(
         self,
         text: str,

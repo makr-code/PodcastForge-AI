@@ -206,6 +206,9 @@ def test_synthesize_with_fallback_empty_engines_raises():
         mgr.synthesize_with_fallback(text="Test", speaker="s1", engines=[])
     mgr.unload_all()
 
+
+def test_use_engine_context_and_refcount_release():
+    """Engine wird erst entladen wenn alle Context-Manager-Ebenen verlassen sind."""
     mgr = TTSEngineManager(max_engines=2)
 
     original_map = TTSEngineFactory._engine_classes.copy()

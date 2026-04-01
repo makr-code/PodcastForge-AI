@@ -133,8 +133,8 @@ class Ebook2AudiobookAdapter:
         lines = []
 
         for entry in script:
-            speaker = entry["speaker_name"]
-            text = entry["text"]
+            speaker = entry.get("speaker_name", entry.get("speaker_id", "Unknown"))
+            text = entry.get("text", "")
             emotion = entry.get("emotion", "neutral")
 
             # Format: Speaker: Text
@@ -203,7 +203,8 @@ class Ebook2AudiobookAdapter:
             # Alle Segmente generieren
             segments = []
             for i, entry in enumerate(script):
-                temp_segment = f"/tmp/segment_{i}.wav"
+                fd, temp_segment = tempfile.mkstemp(suffix=".wav")
+                os.close(fd)
 
                 engine_chain = _resolve_engine_chain(entry)
                 logger.debug(

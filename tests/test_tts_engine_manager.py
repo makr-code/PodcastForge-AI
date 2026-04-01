@@ -2,13 +2,13 @@
 """
 Unit tests for TTSEngineManager using mock engines.
 """
+import pytest
 import threading
-from pathlib import Path
 import time
+from pathlib import Path as P
 
 # Ensure src is importable (tests already do this elsewhere)
 import sys
-from pathlib import Path as P
 sys.path.insert(0, str(P(__file__).parent.parent / "src"))
 
 from podcastforge.tts.engine_manager import (
@@ -185,7 +185,6 @@ def test_synthesize_with_fallback_all_fail_raises():
         TTSEngineFactory._engine_classes[TTSEngine.XTTS] = AlwaysFailEngine
         TTSEngineFactory._engine_classes[TTSEngine.BARK] = AlwaysFailEngine
 
-        import pytest
         with pytest.raises(RuntimeError, match="Alle Engines"):
             mgr.synthesize_with_fallback(
                 text="Test",
@@ -201,7 +200,6 @@ def test_synthesize_with_fallback_all_fail_raises():
 def test_synthesize_with_fallback_empty_engines_raises():
     """Leere Engines-Liste löst ValueError aus."""
     mgr = TTSEngineManager(max_engines=2)
-    import pytest
     with pytest.raises(ValueError, match="engines darf nicht leer sein"):
         mgr.synthesize_with_fallback(text="Test", speaker="s1", engines=[])
     mgr.unload_all()

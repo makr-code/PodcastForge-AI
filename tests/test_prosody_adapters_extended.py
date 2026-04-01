@@ -92,7 +92,7 @@ class TestAdaptForEngineEdgeCases:
 
     def test_invalid_string_rate_ignored(self):
         result = adapt_for_engine("PIPER", {"rate": "fast"})
-        assert "length_scale" not in result or result.get("length_scale") is not None
+        assert "length_scale" not in result
 
     def test_only_pitch_no_rate(self):
         result = adapt_for_engine("PIPER", {"pitch_cents": 100})

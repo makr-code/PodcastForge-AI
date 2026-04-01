@@ -2,14 +2,14 @@
 """
 Unit tests for TTSEngineManager using mock engines.
 """
+import pytest
 import threading
-from pathlib import Path
 import time
+from pathlib import Path
 
 # Ensure src is importable (tests already do this elsewhere)
 import sys
-from pathlib import Path as P
-sys.path.insert(0, str(P(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from podcastforge.tts.engine_manager import (
     TTSEngineManager,
@@ -101,7 +101,112 @@ def test_engine_manager_concurrent_load_same_key():
         mgr.unload_all()
 
 
+def test_synthesize_with_fallback_first_engine_succeeds():
+    """Wenn die erste Engine funktioniert, wird sie genutzt und die Fallback-Kette nicht weiter probiert."""
+    mgr = TTSEngineManager(max_engines=2)
+
+    original_map = TTSEngineFactory._engine_classes.copy()
+    try:
+        TTSEngineFactory._engine_classes[TTSEngine.PIPER] = MockEngine
+        TTSEngineFactory._engine_classes[TTSEngine.BARK] = MockEngine
+
+        audio, sr = mgr.synthesize_with_fallback(
+            text="Hallo Welt",
+            speaker="de_speaker",
+            engines=[TTSEngine.PIPER, TTSEngine.BARK],
+        )
+        assert audio == b"audio-bytes"
+        assert sr == 22050
+
+    finally:
+        TTSEngineFactory._engine_classes = original_map
+        mgr.unload_all()
+
+
+def test_synthesize_with_fallback_uses_second_on_failure():
+    """Wenn die erste Engine fehlschlägt, wird die zweite Engine verwendet."""
+    mgr = TTSEngineManager(max_engines=2)
+
+    class FailingEngine(BaseTTSEngine):
+        def load_model(self):
+            self.model = object()
+            self.is_loaded = True
+            self.sample_rate = 22050
+
+        def synthesize(self, text, speaker, **kwargs):
+            raise RuntimeError("Engine nicht verfügbar")
+
+        def unload(self):
+            self.model = None
+            self.is_loaded = False
+
+        def get_memory_usage(self) -> int:
+            return 0
+
+    original_map = TTSEngineFactory._engine_classes.copy()
+    try:
+        TTSEngineFactory._engine_classes[TTSEngine.XTTS] = FailingEngine
+        TTSEngineFactory._engine_classes[TTSEngine.PIPER] = MockEngine
+
+        audio, sr = mgr.synthesize_with_fallback(
+            text="Test",
+            speaker="speaker_1",
+            engines=[TTSEngine.XTTS, TTSEngine.PIPER],
+        )
+        assert audio == b"audio-bytes"
+
+    finally:
+        TTSEngineFactory._engine_classes = original_map
+        mgr.unload_all()
+
+
+def test_synthesize_with_fallback_all_fail_raises():
+    """Wenn alle Engines fehlschlagen, wird RuntimeError geworfen."""
+    mgr = TTSEngineManager(max_engines=2)
+
+    class AlwaysFailEngine(BaseTTSEngine):
+        def load_model(self):
+            self.model = object()
+            self.is_loaded = True
+            self.sample_rate = 22050
+
+        def synthesize(self, text, speaker, **kwargs):
+            raise RuntimeError("immer fehlgeschlagen")
+
+        def unload(self):
+            self.model = None
+            self.is_loaded = False
+
+        def get_memory_usage(self) -> int:
+            return 0
+
+    original_map = TTSEngineFactory._engine_classes.copy()
+    try:
+        TTSEngineFactory._engine_classes[TTSEngine.XTTS] = AlwaysFailEngine
+        TTSEngineFactory._engine_classes[TTSEngine.BARK] = AlwaysFailEngine
+
+        with pytest.raises(RuntimeError, match="Alle Engines"):
+            mgr.synthesize_with_fallback(
+                text="Test",
+                speaker="speaker_1",
+                engines=[TTSEngine.XTTS, TTSEngine.BARK],
+            )
+
+    finally:
+        TTSEngineFactory._engine_classes = original_map
+        mgr.unload_all()
+
+
+def test_synthesize_with_fallback_empty_engines_raises():
+    """Leere Engines-Liste löst ValueError aus."""
+    mgr = TTSEngineManager(max_engines=2)
+    with pytest.raises(ValueError, match="engines darf nicht leer sein"):
+        mgr.synthesize_with_fallback(text="Test", speaker="s1", engines=[])
+    mgr.unload_all()
+
+
 def test_use_engine_context_and_refcount_release():
+    """Engine wird erst entladen wenn alle Context-Manager-Ebenen verlassen sind."""
     mgr = TTSEngineManager(max_engines=2)
 
     original_map = TTSEngineFactory._engine_classes.copy()

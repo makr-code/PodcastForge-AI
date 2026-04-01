@@ -444,7 +444,8 @@ def synthesize_script_preview(
                             pass
 
     # All clips available, build combined preview or stream into encoder
-    ordered_files = [Path(c['file']) for c in clips]
+    # Filter to only files that were actually generated (cancelled tasks leave no file)
+    ordered_files = [Path(c['file']) for c in clips if Path(c['file']).exists()]
     final_preview = None
     fmt = (output_format or 'mp4').lower()
     # normalize common aliases

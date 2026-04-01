@@ -2,6 +2,7 @@
 Hauptklasse für PodcastForge AI
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -116,25 +117,38 @@ Dauer: {duration} Minuten
         console.print("[cyan]🎙️ Generiere Audio...[/cyan]")
         temp_audio = output.replace(".mp3", "_temp.wav")
 
-        # If the config specifies a TTS engine, acquire it for the duration
-        # of audio generation using the engine manager context to ensure
-        # deterministic acquire/release and avoid global unloads.
+        # Alle benötigten Engines sammeln:
+        # global + pro Sprecher + Fallback-Kette – in dieser Priorität.
         engine_manager = get_engine_manager()
-        engine_type = None
-        if config.voice_engine:
-            try:
-                engine_type = TTSEngine(config.voice_engine)
-            except ValueError:
-                engine_type = None
+        engine_names: List[str] = []
 
-        if engine_type:
-            console.print(f"[dim]Vorchlade und sperre TTS-Engine: {engine_type.value}[/dim]")
-            with engine_manager.use_engine(engine_type, config={"model": config.voice_engine}):
-                # Generiere Audio (adapter kümmert sich um intern verwendete Engines)
+        if config.voice_engine:
+            engine_names.append(config.voice_engine)
+        for speaker in config.speakers:
+            if speaker.voice_engine and speaker.voice_engine not in engine_names:
+                engine_names.append(speaker.voice_engine)
+        for fb in config.fallback_engines:
+            if fb not in engine_names:
+                engine_names.append(fb)
+
+        # Nur gültige Engine-Typen behalten
+        engine_types: List[TTSEngine] = []
+        for name in engine_names:
+            try:
+                engine_types.append(TTSEngine(name))
+            except ValueError:
+                logger.warning(f"Unbekannte TTS-Engine '{name}' wird übersprungen.")
+
+        if engine_types:
+            names_str = ", ".join(e.value for e in engine_types)
+            console.print(f"[dim]Vorlade und sperre TTS-Engines: {names_str}[/dim]")
+            with contextlib.ExitStack() as stack:
+                for et in engine_types:
+                    stack.enter_context(engine_manager.use_engine(et, config={"model": et.value}))
                 self.tts_adapter.generate_audio(script, temp_audio, config)
-            console.print("[dim]TTS-Engine freigegeben[/dim]")
+            console.print("[dim]TTS-Engines freigegeben[/dim]")
         else:
-            # No specific engine requested or unknown; generate normally
+            # Keine gültige Engine konfiguriert – direkt generieren
             self.tts_adapter.generate_audio(script, temp_audio, config)
 
         # 3. Post-Processing

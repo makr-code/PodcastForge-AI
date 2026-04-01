@@ -61,8 +61,23 @@ def preview_voice(voice_id: str, sample_text: str = "Hallo, dies ist eine Vorsch
             wf.setframerate(int(sr))
             wf.writeframes(int16.tobytes())
     except Exception:
+        # Last-resort: write a minimal WAV file manually so the output is always valid
         try:
-            out_path.write_bytes(int16.tobytes())
+            import struct
+            num_samples = len(int16)
+            data_chunk_size = num_samples * 2          # bytes: 2 bytes per int16 sample
+            riff_chunk_size = 36 + data_chunk_size     # total file size minus 8 (RIFF header)
+            header = struct.pack(
+                '<4sI4s'    # RIFF chunk: id, total size, format="WAVE"
+                '4sIHH'     # fmt  chunk: id, chunk_size=16, audio_fmt=PCM(1), num_channels=1
+                'IIHH'      # fmt  chunk: sample_rate, byte_rate, block_align, bits_per_sample
+                '4sI',      # data chunk: id, data_size
+                b'RIFF', riff_chunk_size, b'WAVE',
+                b'fmt ', 16, 1, 1,                     # PCM, mono
+                int(sr), int(sr) * 2, 2, 16,           # sample_rate, byte_rate, block_align=2, bits=16
+                b'data', data_chunk_size,
+            )
+            out_path.write_bytes(header + int16.tobytes())
         except Exception:
             return None
 

@@ -41,6 +41,7 @@ class Speaker:
     voice_sample: Optional[str] = None
     gender: str = "neutral"
     age: str = "adult"
+    voice_engine: Optional[str] = None  # Überschreibt die globale Engine für diesen Sprecher
 
     def __post_init__(self):
         if not self.id:
@@ -63,6 +64,7 @@ class PodcastConfig:
     background_music: Optional[str] = None
     output_format: str = "mp3"
     voice_engine: str = "xtts"
+    fallback_engines: List[str] = field(default_factory=list)  # Geordnete Fallback-Kette falls primäre Engine fehlschlägt
     bitrate: str = "192k"
     sample_rate: int = 44100
     voice_quality: VoiceQuality = VoiceQuality.STANDARD

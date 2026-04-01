@@ -84,7 +84,8 @@ class TestDummyEngine:
 
     def test_repr_contains_engine_type(self):
         r = repr(self.engine)
-        assert "BaseTTSEngine" in r or "DummyEngine" in r or "dummy" in r.lower() or isinstance(r, str)
+        assert isinstance(r, str) and len(r) > 0
+        assert "DummyEngine" in r or "dummy" in r.lower() or "device=" in r
 
     def test_get_memory_usage_returns_int(self):
         assert isinstance(self.engine.get_memory_usage(), int)

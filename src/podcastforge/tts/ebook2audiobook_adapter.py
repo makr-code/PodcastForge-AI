@@ -147,6 +147,50 @@ class Ebook2AudiobookAdapter:
 
         return "\n\n".join(lines)
 
+    def _resolve_engine_chain(
+        self,
+        entry: Dict,
+        config: PodcastConfig,
+        speaker_map: Dict,
+        engine_manager,
+    ) -> List[TTSEngine]:
+        """Bestimmt die Engine-Fallback-Kette für einen Script-Eintrag.
+
+        Priorität: Speaker.voice_engine > PodcastConfig.voice_engine > fallback_engines.
+        Unbekannte Engine-Namen werden übersprungen. Falls die Kette leer bleibt,
+        wird die Standard-Engine des Managers verwendet.
+        """
+        chain: List[str] = []
+
+        # 1. Individuelle Engine des Sprechers (höchste Priorität)
+        speaker_id = entry.get("speaker_id", "")
+        speaker = speaker_map.get(speaker_id)
+        if speaker and speaker.voice_engine:
+            chain.append(speaker.voice_engine)
+
+        # 2. Globale Engine aus der Podcast-Konfiguration
+        if config.voice_engine and config.voice_engine not in chain:
+            chain.append(config.voice_engine)
+
+        # 3. Konfigurierte Fallback-Engines
+        for fb in (config.fallback_engines or []):
+            if fb not in chain:
+                chain.append(fb)
+
+        # Unbekannte Engine-Namen überspringen
+        result: List[TTSEngine] = []
+        for name in chain:
+            try:
+                result.append(TTSEngine(name))
+            except ValueError:
+                logger.warning(f"Unbekannte TTS-Engine '{name}' wird übersprungen.")
+
+        # Letzter Ausweg: Standard-Engine des Managers
+        if not result:
+            result.append(engine_manager.default_engine)
+
+        return result
+
     def _generate_with_tts(
         self, script: List[Dict], output_path: str, config: PodcastConfig
     ) -> str:
@@ -167,46 +211,13 @@ class Ebook2AudiobookAdapter:
             # Sprecher-Lookup für schnellen Zugriff: speaker_id -> Speaker
             speaker_map: Dict[str, Speaker] = {s.id: s for s in (config.speakers or [])}
 
-            def _resolve_engine_chain(entry: Dict) -> List[TTSEngine]:
-                """Bestimmt die Engine-Fallback-Kette für einen Script-Eintrag."""
-                chain: List[str] = []
-
-                # 1. Individuelle Engine des Sprechers (höchste Priorität)
-                speaker_id = entry.get("speaker_id", "")
-                speaker = speaker_map.get(speaker_id)
-                if speaker and speaker.voice_engine:
-                    chain.append(speaker.voice_engine)
-
-                # 2. Globale Engine aus der Podcast-Konfiguration
-                if config.voice_engine and config.voice_engine not in chain:
-                    chain.append(config.voice_engine)
-
-                # 3. Konfigurierte Fallback-Engines
-                for fb in (config.fallback_engines or []):
-                    if fb not in chain:
-                        chain.append(fb)
-
-                # Unbekannte Engine-Namen überspringen
-                result: List[TTSEngine] = []
-                for name in chain:
-                    try:
-                        result.append(TTSEngine(name))
-                    except ValueError:
-                        logger.warning(f"Unbekannte TTS-Engine '{name}' wird übersprungen.")
-
-                # Letzter Ausweg: Standard-Engine des Managers
-                if not result:
-                    result.append(engine_manager.default_engine)
-
-                return result
-
             # Alle Segmente generieren
             segments = []
             for i, entry in enumerate(script):
                 fd, temp_segment = tempfile.mkstemp(suffix=".wav")
                 os.close(fd)
 
-                engine_chain = _resolve_engine_chain(entry)
+                engine_chain = self._resolve_engine_chain(entry, config, speaker_map, engine_manager)
                 logger.debug(
                     f"Segment {i} ({entry.get('speaker_id', '?')}): "
                     f"Engine-Kette = {[e.value for e in engine_chain]}"

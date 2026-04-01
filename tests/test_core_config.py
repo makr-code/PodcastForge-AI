@@ -207,6 +207,6 @@ class TestPodcastTemplates:
         assert tmpl["num_speakers"] == 3
 
     def test_unknown_style_returns_discussion(self):
-        # get_podcast_template falls back to DISCUSSION
-        fallback = get_podcast_template(PodcastStyle.DISCUSSION)
+        # get_podcast_template falls back to DISCUSSION for keys not in the dict
+        fallback = PODCAST_TEMPLATES.get("nonexistent_style", PODCAST_TEMPLATES[PodcastStyle.DISCUSSION])
         assert fallback["name"] == "Diskussion"

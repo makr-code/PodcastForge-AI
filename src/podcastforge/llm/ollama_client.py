@@ -4,7 +4,7 @@ Ollama Client für LLM-Integration
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import requests
 from rich.console import Console

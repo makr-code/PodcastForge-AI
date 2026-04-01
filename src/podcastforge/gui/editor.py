@@ -17,9 +17,8 @@ import yaml
 try:
     from ..audio.player import get_player
     from ..audio.waveform import WaveformGenerator
-    from ..core.config import PodcastConfig, PodcastStyle, Speaker
-    from ..core.forge import PodcastForge
-    from ..voices import VoiceGender, VoiceStyle, get_voice_library
+    from ..core.config import Speaker
+    from ..voices import get_voice_library
 except ImportError:
     # Fallback für direkte Ausführung
     import sys
@@ -36,7 +35,8 @@ from ..core.script_model import normalize_script
 from ..tts.engine_manager import get_engine_manager
 import uuid
 import soundfile as sf
-import tempfile as _tempfile
+
+_tempfile = tempfile
 
 
 class PodcastEditor:

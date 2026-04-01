@@ -6,17 +6,15 @@ import contextlib
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ..audio.postprocessor import AudioPostProcessor
 from ..llm.ollama_client import OllamaClient
 from ..tts.ebook2audiobook_adapter import Ebook2AudiobookAdapter
-from ..voices.library import VoiceAge, VoiceGender, VoiceStyle, get_voice_library
-from .config import PodcastConfig, PodcastStyle, ScriptLine, Speaker
+from ..voices.library import get_voice_library
+from .config import PodcastConfig, PodcastStyle, Speaker
 from ..tts.engine_manager import get_engine_manager, TTSEngine
 
 console = Console()

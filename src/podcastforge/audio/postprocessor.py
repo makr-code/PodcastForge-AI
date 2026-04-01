@@ -4,7 +4,6 @@ Audio-Nachbearbeitung und Optimierung
 
 import logging
 import os
-from pathlib import Path
 
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range, normalize
